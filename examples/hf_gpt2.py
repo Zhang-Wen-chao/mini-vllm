@@ -28,6 +28,7 @@ class HFGPT2Paged:
 
     def __init__(self, hf_model):
         self.hf = hf_model.to(hf_model.device)
+        self.device = hf_model.device
         cfg = hf_model.config
         self.n_heads = cfg.n_head
         self.head_dim = cfg.n_embd // cfg.n_head
@@ -43,38 +44,36 @@ class HFGPT2Paged:
             ln = block.ln_1(x)
             w = block.attn.c_attn.weight
             bias = block.attn.c_attn.bias
-            qkv = F.linear(ln, w, bias).split(self.n_heads * self.head_dim,
-                                              dim=-1)
-            q, k, v = [part.view(b, t, self.n_heads, self.head_dim)
+            # GPT-2 uses Conv1D: weight is (in, out), no transpose.
+            qkv = (ln @ w + bias).split(self.n_heads * self.head_dim, dim=-1)
+            q, k, v = [part.reshape(t, self.n_heads, self.head_dim)
                        for part in qkv]
-            q = q.transpose(1, 2).reshape(t, self.n_heads, self.head_dim)
-            k = k.transpose(1, 2).reshape(t, self.n_heads, self.head_dim)
-            v = v.transpose(1, 2).reshape(t, self.n_heads, self.head_dim)
             table.append(l, k, v)
             o = paged_attention(q, table, layer=l, causal=True,
                                 total_tokens=num_tokens)
             o = o.reshape(b, t, self.n_heads * self.head_dim)
-            x = x + F.linear(o, block.attn.c_proj.weight,
-                             block.attn.c_proj.bias)
+            x = x + (o @ block.attn.c_proj.weight + block.attn.c_proj.bias)
             h = block.ln_2(x)
-            x = x + F.linear(F.gelu(F.linear(h, block.mlp.c_fc.weight,
-                                             block.mlp.c_fc.bias)),
-                             block.mlp.c_proj.weight, block.mlp.c_proj.bias)
+            x = x + F.gelu(h @ block.mlp.c_fc.weight + block.mlp.c_fc.bias) @ \
+                block.mlp.c_proj.weight + block.mlp.c_proj.bias
         return self.hf.transformer.ln_f(x)
 
     def prefill(self, input_ids, table):
+        device = self.hf.transformer.wte.weight.device
+        input_ids = input_ids.to(device)
         t = input_ids.shape[0]
         x = self.hf.transformer.wte(input_ids.unsqueeze(0)) + \
-            self.hf.transformer.wpe(torch.arange(t, device=input_ids.device))
+            self.hf.transformer.wpe(torch.arange(t, device=device))
         logits = self._run_layers(x, table, num_tokens=t)
         table.advance(t)
         return self.hf.lm_head(logits).squeeze(0)
 
     def decode(self, token_id, table):
+        device = self.hf.transformer.wte.weight.device
+        token_id = token_id.to(device)
         pos = table.num_tokens
         x = self.hf.transformer.wte(token_id.unsqueeze(0)) + \
-            self.hf.transformer.wpe(torch.tensor([pos],
-                                                 device=token_id.device))
+            self.hf.transformer.wpe(torch.tensor([pos], device=device))
         logits = self._run_layers(x, table, num_tokens=pos + 1)
         table.advance(1)
         return self.hf.lm_head(logits).squeeze(0)
@@ -111,7 +110,8 @@ def main():
     model = HFGPT2Paged(hf)
 
     prompt_ids = torch.tensor(tok.encode(args.prompt))
-    engine = Engine(model, block_size=16, num_blocks=args.num_blocks)
+    engine = Engine(model, block_size=16, num_blocks=args.num_blocks,
+                    device=model.device)
     req = engine.add_request(prompt_ids, max_new_tokens=args.max_new)
 
     t0 = time.time()
@@ -123,7 +123,8 @@ def main():
     print("prompt :", args.prompt)
     print("engine :", args.prompt + tok.decode(generated))
 
-    ref = greedy_hf_reference(hf, tok, prompt_ids, args.max_new)
+    ref = greedy_hf_reference(hf, tok, prompt_ids.to(device),
+                              args.max_new)
     match = generated == ref
     print("hf ref :", args.prompt + tok.decode(ref))
     print(f"match: {match}  ({elapsed:.1f}s for {len(generated)} tokens)")

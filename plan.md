@@ -47,11 +47,21 @@ mini-vllm/
 
 | 阶段 | 内容 | 验证方式 | 状态 |
 |---|---|---|---|
-| Phase 1 | 分块 KV cache（块池/块表/分配/归还） | CPU 单测 | ⬜ |
-| Phase 2 | PagedAttention（按块 online softmax） | 与稠密 attention 数值等价（allclose） | ⬜ |
-| Phase 3 | 调度器（WAITING/RUNNING/抢占） | CPU 单测：增删/容量/抢占场景 | ⬜ |
-| Phase 4 | 引擎 + 小模型端到端生成 | L20 上 gpt2/opt 跑通生成 | ⬜ |
-| Phase 5 | README + GitHub 发布 | 仓库公开 | ⬜ |
+| Phase 1 | 分块 KV cache（块池/块表/分配/归还） | CPU 单测 | ✅ 完成 |
+| Phase 2 | PagedAttention（按块 online softmax） | 与稠密 attention 数值等价（allclose） | ✅ 完成 |
+| Phase 3 | 调度器（WAITING/RUNNING/抢占） | CPU 单测：增删/容量/抢占场景 | ✅ 完成 |
+| Phase 4 | 引擎 + 小模型端到端生成 | L20 上 gpt2/opt 跑通生成 | ✅ 完成 |
+| Phase 5 | README + GitHub 发布 | 仓库私有已建，HF GPT-2 适配器验证 | ✅ 完成（待公开发布） |
+
+## 实机验证结果（2026-08-14, L20）
+
+- `distilgpt2`（6 层）：10 tokens 贪心生成，与 HF `generate` **逐 token 一致**
+- `gpt2`（12 层）：15 tokens 生成，与 HF `generate` **逐 token 一致**
+- 每 token 约 0.03s（未做批量化优化，纯教学）
+- 调试中确认的关键坑：
+  1. GPT-2 权重是 Conv1D 布局（`(in, out)` 不转置），`F.linear` 不能直接用
+  2. `transpose(1,2).reshape(t, h, hd)` 会交换 head 与 token 顺序，必须用 `view/reshape` 直接切
+  3. HF 5.x 的 `output_hidden_states` 末项是 `ln_f` 之后的输出
 
 ## 验收标准
 

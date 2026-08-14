@@ -21,10 +21,15 @@ from .scheduler import Scheduler
 
 class Engine:
     def __init__(self, model, block_size=16, num_blocks=64,
-                 max_prefill_tokens=256, max_running_tokens=512):
+                 max_prefill_tokens=256, max_running_tokens=512,
+                 device=None):
         self.model = model
+        if device is None:
+            param = next(model.parameters())
+            device = str(param.device)
         self.kv = KVBlockManager(num_blocks, block_size, model.n_heads,
-                                 model.head_dim, num_layers=model.n_layers)
+                                 model.head_dim, num_layers=model.n_layers,
+                                 device=device)
         self.scheduler = Scheduler(block_size=block_size,
                                    max_prefill_tokens=max_prefill_tokens,
                                    max_running_tokens=max_running_tokens)
