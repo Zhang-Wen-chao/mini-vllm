@@ -74,17 +74,23 @@ def paged_attention(query, table, layer=0, causal=True, scale=None,
 def dense_attention(query, k, v, causal=True, scale=None):
     """Reference implementation over the full contiguous K/V tensors.
 
-    Used only to verify `paged_attention` numerically.
+    Accepts single-sequence 3-D tensors (T, H, D) or batched 4-D tensors
+    (B, T, H, D). Used only to verify `paged_attention` numerically.
     """
     if scale is None:
         scale = query.shape[-1] ** -0.5
-    scores = torch.einsum("qhd,shd->qhs", query, k) * scale  # (nq, H, T)
+    batched = query.dim() == 4
+    if not batched:
+        query, k, v = query.unsqueeze(0), k.unsqueeze(0), v.unsqueeze(0)
+    scores = torch.einsum("bqhd,bshd->bqhs", query, k) * scale
     if causal:
-        total = k.shape[0]
-        q_pos = torch.arange(total - query.shape[0], total,
-                             device=query.device)
+        total = k.shape[-3]
+        b, q = query.shape[:2]
+        q_pos = torch.arange(total - q, total, device=query.device)
         k_pos = torch.arange(total, device=query.device)
-        scores = scores.masked_fill(q_pos[:, None, None] < k_pos[None, None, :],
-                                    float("-inf"))
+        # scores are (B, Q, H, S): mask per (Q, S) broadcast over heads
+        mask = (q_pos[:, None, None] < k_pos[None, None, :]).unsqueeze(0)
+        scores = scores.masked_fill(mask, float("-inf"))
     probs = torch.softmax(scores, dim=-1)
-    return torch.einsum("qht,thd->qhd", probs, v)
+    out = torch.einsum("bqht,bthd->bqhd", probs, v)
+    return out if batched else out.squeeze(0)
