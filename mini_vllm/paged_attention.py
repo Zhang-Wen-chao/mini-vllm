@@ -10,7 +10,8 @@ scores, and fold them into a running (max, sum, accumulator) triple.
 import torch
 
 
-def paged_attention(query, table, layer=0, causal=True, scale=None):
+def paged_attention(query, table, layer=0, causal=True, scale=None,
+                    total_tokens=None):
     """Attention between `query` and the paged K/V of `table`'s sequence.
 
     Args:
@@ -19,6 +20,9 @@ def paged_attention(query, table, layer=0, causal=True, scale=None):
         layer: which transformer layer's K/V blocks to read.
         causal: mask out keys that come after each query's position.
         scale: softmax temperature; defaults to 1/sqrt(head_dim).
+        total_tokens: total stored tokens of the sequence. Defaults to the
+            streaming convention: the queries of this step are the tokens
+            being written right now, so total = cursor + num_queries.
 
     Returns:
         (num_queries, num_heads, head_dim) attention output.
@@ -27,7 +31,10 @@ def paged_attention(query, table, layer=0, causal=True, scale=None):
     if scale is None:
         scale = query.shape[-1] ** -0.5
     num_queries, num_heads, head_dim = query.shape
-    total_tokens = table.num_tokens
+    if total_tokens is None:
+        # append() already wrote this step's K/V at the cursor, so the
+        # sequence length right now is cursor + the tokens being queried.
+        total_tokens = table.num_tokens + num_queries
     q_start = total_tokens - num_queries  # global position of the first query
 
     max_score = torch.full((num_queries, num_heads, 1), float("-inf"),

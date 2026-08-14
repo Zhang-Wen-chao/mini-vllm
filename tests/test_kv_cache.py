@@ -37,6 +37,7 @@ def test_write_spans_multiple_blocks():
     k = torch.randn(10, 2, 8)
     v = torch.randn(10, 2, 8)
     table.append(0, k, v)
+    table.advance(10)
     assert len(table.blocks) == 3          # 10 tokens / 4 per block
     assert table.num_tokens == 10
     k_read, v_read = table.get_kv(0)
@@ -50,9 +51,11 @@ def test_append_after_restart_mimics_prefill_then_decode():
     prefill_k = torch.randn(6, 1, 4)
     prefill_v = torch.randn(6, 1, 4)
     table.append(0, prefill_k, prefill_v)      # prefill: 6 tokens
+    table.advance(6)
     decode_k = torch.randn(1, 1, 4)
     decode_v = torch.randn(1, 1, 4)
     table.append(0, decode_k, decode_v)        # decode: +1 token
+    table.advance(1)
     k_read, v_read = table.get_kv(0)
     assert torch.allclose(k_read, torch.cat([prefill_k, decode_k]))
     assert torch.allclose(v_read, torch.cat([prefill_v, decode_v]))

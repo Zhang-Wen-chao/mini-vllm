@@ -82,7 +82,12 @@ class BlockTable:
             self.blocks.append(self.pool.allocate())
 
     def append(self, layer, k, v):
-        """Append (T, H, D) K/V tensors at the sequence's current position."""
+        """Write (T, H, D) K/V for `layer` at the sequence's current position.
+
+        Every layer of a transformer writes the same tokens, so ``append``
+        does *not* advance the token cursor; call ``advance(T)`` once per
+        token step after all layers have written.
+        """
         num = k.shape[0]
         assert v.shape[0] == num
         self.ensure_capacity(num)
@@ -100,7 +105,10 @@ class BlockTable:
             v = v[take:]
             start += take
             remaining -= take
-        self.num_tokens = start
+
+    def advance(self, num):
+        """Mark `num` more tokens as stored for this sequence."""
+        self.num_tokens += num
 
     def get_kv(self, layer):
         """Return (K, V) of shape (num_tokens, H, D) in token order."""

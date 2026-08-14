@@ -12,6 +12,7 @@ def make_table(num_tokens, block_size, num_heads, head_dim, num_layers=1,
     k = torch.randn(num_tokens, num_heads, head_dim, dtype=dtype)
     v = torch.randn(num_tokens, num_heads, head_dim, dtype=dtype)
     table.append(0, k, v)
+    table.advance(num_tokens)
     return table, k, v
 
 
@@ -19,7 +20,8 @@ def check_matches_dense(num_tokens, num_queries, block_size, num_heads,
                         head_dim, causal, atol=1e-8):
     table, k, v = make_table(num_tokens, block_size, num_heads, head_dim)
     query = torch.randn(num_queries, num_heads, head_dim, dtype=torch.float64)
-    out = paged_attention(query, table, causal=causal)
+    out = paged_attention(query, table, causal=causal,
+                              total_tokens=num_tokens)
     ref = dense_attention(query, k, v, causal=causal)
     assert out.shape == ref.shape
     assert torch.allclose(out, ref, atol=atol), (out - ref).abs().max()
@@ -56,7 +58,8 @@ def test_query_attends_only_its_prefix():
     table, k, v = make_table(num_tokens=6, block_size=4, num_heads=1,
                              head_dim=8)
     query = torch.randn(3, 1, 8, dtype=torch.float64)  # queries at pos 3,4,5
-    out = paged_attention(query, table, causal=True)
+    out = paged_attention(query, table, causal=True,
+                              total_tokens=6)
     ref = dense_attention(query, k, v, causal=True)
     assert torch.allclose(out, ref)
 
@@ -67,11 +70,14 @@ def test_decode_after_multiple_appends():
                              head_dim=8)
     table.append(0, torch.randn(1, 2, 8, dtype=torch.float64),
                  torch.randn(1, 2, 8, dtype=torch.float64))
+    table.advance(1)
     table.append(0, torch.randn(1, 2, 8, dtype=torch.float64),
                  torch.randn(1, 2, 8, dtype=torch.float64))
+    table.advance(1)
     k, v = table.get_kv(0)
     query = torch.randn(1, 2, 8, dtype=torch.float64)
-    out = paged_attention(query, table, causal=True)
+    out = paged_attention(query, table, causal=True,
+                          total_tokens=table.num_tokens)
     ref = dense_attention(query, k, v, causal=True)
     assert torch.allclose(out, ref)
 
@@ -82,6 +88,7 @@ def test_fp32_still_matches_within_tolerance():
         num_tokens = 20
         table, k, v = make_table(num_tokens, 4, 2, 8, dtype=torch.float32)
         query = torch.randn(5, 2, 8, dtype=torch.float32)
-        out = paged_attention(query, table, causal=True)
+        out = paged_attention(query, table, causal=True,
+                                  total_tokens=20)
         ref = dense_attention(query, k, v, causal=True)
         assert torch.allclose(out, ref, atol=1e-4, rtol=1e-4)
