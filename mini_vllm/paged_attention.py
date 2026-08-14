@@ -38,8 +38,9 @@ def paged_attention(query, table, layer=0, causal=True, scale=None,
     q_start = total_tokens - num_queries  # global position of the first query
 
     max_score = torch.full((num_queries, num_heads, 1), float("-inf"),
-                           device=query.device)
-    sum_exp = torch.zeros(num_queries, num_heads, 1, device=query.device)
+                           device=query.device, dtype=query.dtype)
+    sum_exp = torch.zeros(num_queries, num_heads, 1, device=query.device,
+                          dtype=query.dtype)
     acc = torch.zeros_like(query)
 
     for block_pos in range(0, total_tokens, pool.block_size):

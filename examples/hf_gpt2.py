@@ -29,6 +29,7 @@ class HFGPT2Paged:
     def __init__(self, hf_model):
         self.hf = hf_model.to(hf_model.device)
         self.device = hf_model.device
+        self.dtype = next(hf_model.parameters()).dtype
         cfg = hf_model.config
         self.n_heads = cfg.n_head
         self.head_dim = cfg.n_embd // cfg.n_head
@@ -111,7 +112,7 @@ def main():
 
     prompt_ids = torch.tensor(tok.encode(args.prompt))
     engine = Engine(model, block_size=16, num_blocks=args.num_blocks,
-                    device=model.device)
+                    device=model.device, dtype=model.dtype)
     req = engine.add_request(prompt_ids, max_new_tokens=args.max_new)
 
     t0 = time.time()

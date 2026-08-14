@@ -22,14 +22,18 @@ from .scheduler import Scheduler
 class Engine:
     def __init__(self, model, block_size=16, num_blocks=64,
                  max_prefill_tokens=256, max_running_tokens=512,
-                 device=None):
+                 device=None, dtype=None):
         self.model = model
         if device is None:
             param = next(model.parameters())
             device = str(param.device)
+        if dtype is None:
+            dtype = getattr(model, "dtype", None)
+            if dtype is None:
+                dtype = next(model.parameters()).dtype
         self.kv = KVBlockManager(num_blocks, block_size, model.n_heads,
                                  model.head_dim, num_layers=model.n_layers,
-                                 device=device)
+                                 device=device, dtype=dtype)
         self.scheduler = Scheduler(block_size=block_size,
                                    max_prefill_tokens=max_prefill_tokens,
                                    max_running_tokens=max_running_tokens)
