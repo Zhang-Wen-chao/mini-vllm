@@ -66,45 +66,40 @@ pytest                 # 30 个 CPU 单测, 全绿
 python examples/run_engine.py
 ```
 
-## 与 vLLM 的对比（L20, 2026-08-14）
+## 与 vLLM 的对比（L20, 2026-08-14，公平版）
 
-`gpt2` + 8 个并发请求 + 贪心采样，mini-vllm vs vLLM 0.8.5（`VLLM_USE_V1=0`）：
+`gpt2` + 8 并发 + 贪心，fp16，vLLM 0.8.5 **V1 引擎**（修复了内存配置后满血），
+双方都先 warmup（捕获成本与 init 一起排除），**在空闲 GPU 上实测**：
 
-| 精度 | 场景 | mini 吞吐 | vLLM 吞吐 | 差距 | 一致性 |
-|---|---|---|---|---|---|
-| FP32 | max_new=20 | 522 tok/s | ~1500 tok/s | 2.9x | 8/8 逐 token |
-| FP32 | max_new=100 | **1612 tok/s** | 1867 tok/s | **1.16x** | 8/8 逐 token |
-| FP32 | 稳态 decode | **3666 tok/s** | ~2673 tok/s | **mini 更快** | 8/8 |
-| FP16 | max_new=100 | 1476 tok/s | 2121 tok/s | 1.46x | 7/8（1 个近邻平局） |
+| 指标 | mini-vllm | vLLM V1 | 比值（mini/vllm） |
+|---|---|---|---|
+| TTFT（16-token prompt） | **1 ms** | 7-17 ms | 0.07-0.17x |
+| TPOT | **0.2 ms** | 0.3-0.6 ms | 0.34-0.74x |
+| 稳态吞吐 | **5342-5377 tok/s** | 1744-3826 tok/s | 1.40-3.07x |
 
-**从 35x 到 1.16x 的完整路径**：
+**重要教训（benchmark 卫生）**：服务器 GPU 0 被其他任务占用 80%，之前所有
+数字都在竞争环境下测得（vLLM 抖动 1744-4512、mini 出现 20-30ms 假慢步）。
+换空闲 GPU 后 mini 数字纹丝不动（5342-5377），vLLM 仍波动——结论建立在 3 次
+重复的稳定区间上。
 
-| 版本 | 吞吐 | 说明 |
-|---|---|---|
-| 初版（逐请求串行前向） | 73.8 tok/s | 基线 |
-| 批量 prefill/decode | 257 tok/s | 整批一次前向 |
-| + 块表张量化 gather | 331 tok/s | index_select 一次取整批 KV |
-| + 批量 append scatter | 360 tok/s | 一次高级索引散射 |
-| + CUDA graph decode | 522 tok/s | 静态缓冲 + 批量变化时重捕获 |
-| + 批量采样 + 长生成摊销 | **1612 tok/s** | 捕获/prefill 固定成本被摊销 |
+**历史路径**（同一 workload 的演进）：35x → 5.8x → 4.4x → 4.2x → 2.9x → 1.16x
+（V0+fp32，有偏差）→ **反超（V1+fp16，空闲 GPU）**。关键手段：批量前向 →
+块表张量化 → 批量 scatter → CUDA graph decode（KV 长度分桶）→ **CUDA graph
+prefill（prompt 长度分桶）+ 启动时 warmup 预捕获（图按 batch 大小复用）**。
 
-**CUDA graph 的三个真实坑**（都已解决并记录）：
-- 捕获期（warmup+capture）会用垃圾缓冲**真实执行 scatter 污染 KV 池** → 捕获前后快照/恢复
-- fp16 下 SDPA 的 **bool 型 attn_mask 有精度损失**（padding 区污染 softmax 统计），
-  必须用 float(-inf) mask
-- 块表缓冲要按 **prompt + max_new_tokens** 预留，否则生成超长时溢出
-- `torch.compile` 是死路（慢 100x）：动态形状 + Python 循环导致 graph 处处断点——
-  这正说明了 vLLM 为何必须写自定义 PagedAttention kernel
+**诚实保留意见**：
+1. gpt2 是 124M 小模型，kernel 启动开销主导——CUDA graph 恰好吃满这个甜区；
+   7B+ 模型上 vLLM 的融合 kernel 优势会显现
+2. vLLM V1 跑在 NGC torch 2.6 容器里（非标准部署），可能有隐藏劣势
+3. 只测了单卡、单模型、贪心采样；未覆盖大 batch、前缀共享、内存压力
 
-**短生成（max_new=20）差距大的原因**：mini 的 CUDA graph 捕获（~200ms）和 eager
-prefill 是固定成本，生成越短占比越高；vLLM 在启动时预捕获所有 batch 桶。长生成下
-两者差距收敛到 ~15%。
+**CUDA graph 的坑**（都已解决并记录）：捕获期污染 KV 池（快照/恢复）、fp16
+bool mask 精度损失（必须 float(-inf)）、块表按 prompt+max_new 预留、图按
+batch 大小而非请求 id 做键（否则 warmup 白做）。
 
-**剩余差距 = 明确的优化清单**：融合 PagedAttention kernel（消除 gather/pad/mask
-中间张量）、kernel 内联 softmax（消除 fp16 累积误差）。
-
-对比脚本：`examples/compare_vllm.py`（需要装了 vLLM 的容器；
-vLLM 0.8.5 在此环境需 `VLLM_USE_V1=0` 且 transformers 固定 4.49）。
+对比脚本：`examples/bench_fair.py`（TTFT/TPOT/吞吐，双方同口径）。
+vLLM 0.8.5 在此环境需 `VLLM_USE_V1=0` 已不需要——V1 修好可用；
+`gpu_memory_utilization=0.9` 是 V1 正常工作的前提。
 
 ## 验证方法
 
