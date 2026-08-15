@@ -73,21 +73,29 @@ python examples/run_engine.py
 | 版本 | mini 吞吐 | vLLM 吞吐 | 差距 | 输出一致性 |
 |---|---|---|---|---|
 | 初版（逐请求串行前向） | 73.8 tok/s | ~2600 tok/s | 35x | 8/8 逐 token 一致 |
-| **批量化后**（一次前向/步） | 330.6 tok/s | 1468 tok/s | **4.4x** | 8/8 逐 token 一致 |
+| 批量 prefill/decode | 257 tok/s | ~1500 tok/s | 5.8x | 8/8 |
+| + 块表张量化 gather | 331 tok/s | ~1500 tok/s | 4.4x | 8/8 |
+| + 批量 append scatter | 360 tok/s | ~1500 tok/s | 4.2x | 8/8 |
+| **+ CUDA graph decode** | **522 tok/s** | ~1500 tok/s | **2.9x** | **8/8** |
 
-**提速手段**（都已集成进引擎，且保持逐 token 等价）：
+**提速手段**（都已集成进引擎，全程保持逐 token 等价）：
 
-1. **批量 prefill/decode**：整批请求合并成一次前向（每行掩码 + padded SDPA），
+1. **批量 prefill/decode**：整批请求合并成一次前向（每行掩码 + padded 注意力），
    73.8 → 257 tok/s（3.5x）
-2. **块表张量化 gather**：`index_select` 一次取整批 KV（替代逐请求 gather），
-   257 → 330 tok/s（+29%）
-3. 试过 `torch.compile`：**反向优化**（慢 100x）——动态形状 + 逐请求 Python
-   循环导致 graph 处处断点；这正说明了 vLLM 为何必须写自定义 PagedAttention
-   kernel 而不是靠编译优化
+2. **块表张量化 gather**：`index_select` 一次取整批 KV（vLLM block_tables 同款设计）
+3. **批量 append scatter**：decode 写入用一次高级索引散射代替逐请求循环
+4. **CUDA graph decode**：静态缓冲 + 批量变化时重捕获；decode 步零启动开销
 
-**剩余 4.4x 差距 = 明确的优化清单**：融合 PagedAttention kernel（消除
-gather/pad/mask 中间张量）、CUDA Graph（消除启动开销）、kernel 内联 softmax
-（消除 fp16 累积误差——fp16 下 7/8 一致，2 个近邻平局分歧由此而来）。
+**CUDA graph 的三个真实坑**（都已解决并记录）：
+- 捕获期（warmup+capture）会用垃圾缓冲**真实执行 scatter 污染 KV 池** → 捕获前后快照/恢复
+- fp16 下 SDPA 的 **bool 型 attn_mask 有精度损失**（padding 区污染 softmax 统计），
+  必须用 float(-inf) mask
+- `torch.compile` 是死路（慢 100x）：动态形状 + Python 循环导致 graph 处处断点——
+  这正说明了 vLLM 为何必须写自定义 PagedAttention kernel
+
+**剩余 2.9x 差距 = 明确的优化清单**：融合 PagedAttention kernel（消除
+gather/pad/mask 中间张量）、kernel 内联 softmax（消除 fp16 累积误差——fp16 下
+7/8 一致，1 个近邻平局分歧由此而来）。
 
 对比脚本：`examples/compare_vllm.py`（需要装了 vLLM 的容器；
 vLLM 0.8.5 在此环境需 `VLLM_USE_V1=0` 且 transformers 固定 4.49）。
