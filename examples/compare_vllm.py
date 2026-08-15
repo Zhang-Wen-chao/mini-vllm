@@ -31,10 +31,12 @@ PROMPTS = [
 ]
 
 
-def run_mini(hf_model, tok, prompts, max_new, block_size=16, num_blocks=4096):
+def run_mini(hf_model, tok, prompts, max_new, block_size=16, num_blocks=4096,
+             use_cuda_graph=False):
     model = HFGPT2Paged(hf_model)
     engine = Engine(model, block_size=block_size, num_blocks=num_blocks,
-                    device=model.device)
+                    device=model.device, dtype=model.dtype,
+                    use_cuda_graph=use_cuda_graph)
     reqs = []
     for p in prompts:
         ids = torch.tensor(tok.encode(p))
@@ -77,6 +79,7 @@ def main():
     parser.add_argument("--max-new", type=int, default=20)
     parser.add_argument("--n-requests", type=int, default=8)
     parser.add_argument("--dtype", default="float32")
+    parser.add_argument("--cuda-graph", action="store_true")
     args = parser.parse_args()
 
     prompts = PROMPTS[:args.n_requests]
@@ -84,14 +87,15 @@ def main():
     tok.pad_token = tok.eos_token
     torch_dtype = torch.float16 if args.dtype == "float16" else torch.float32
     hf = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch_dtype).eval()
+        args.model, torch_dtype=torch_dtype).cuda().eval()
 
-    print(f"== {args.model} | {args.n_requests} requests | max_new={args.max_new} | {args.dtype} ==")
+    print(f"== {args.model} | {args.n_requests} requests | max_new={args.max_new} | {args.dtype}"
+          f" | cuda_graph={args.cuda_graph} ==")
 
     # mini-vllm
     t0 = time.time()
-    m_outs, m_dt, m_tokens, steps, peak_blocks = run_mini(hf, tok, prompts,
-                                                          args.max_new)
+    m_outs, m_dt, m_tokens, steps, peak_blocks = run_mini(
+        hf, tok, prompts, args.max_new, use_cuda_graph=args.cuda_graph)
     m_load = time.time() - t0
     print(f"mini-vllm : {m_tokens} tokens in {m_dt:.2f}s = "
           f"{m_tokens / m_dt:.1f} tok/s | {steps} steps | peak {peak_blocks} KV blocks")

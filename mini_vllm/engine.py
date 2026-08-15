@@ -22,8 +22,9 @@ from .scheduler import Scheduler
 class Engine:
     def __init__(self, model, block_size=16, num_blocks=64,
                  max_prefill_tokens=256, max_running_tokens=512,
-                 device=None, dtype=None):
+                 device=None, dtype=None, use_cuda_graph=False):
         self.model = model
+        self.use_cuda_graph = use_cuda_graph
         if device is None:
             param = next(model.parameters())
             device = str(param.device)
@@ -38,6 +39,8 @@ class Engine:
                                    max_prefill_tokens=max_prefill_tokens,
                                    max_running_tokens=max_running_tokens)
         self._state = {}  # request_id -> {prompt_ids, generated, table}
+        self._graph = None      # captured decode graph buffers
+        self._graph_key = None  # request ids captured in the graph
 
     # -- public API -------------------------------------------------------
 
@@ -105,11 +108,15 @@ class Engine:
                 logits = self.model.prefill(st["prompt_ids"], st["table"])
                 self._sample(r, logits)
         if batchable and decode:
-            tokens = [torch.tensor(self._state[r.request_id]["generated"][-1])
-                      for r in decode]
-            tables = [self._state[r.request_id]["table"] for r in decode]
-            for r, logits in zip(decode, self.model.decode_batch(tokens, tables)):
-                self._sample(r, logits)
+            if self.use_cuda_graph and \
+                    hasattr(self.model, "capture_decode_graph"):
+                self._decode_with_graph(decode)
+            else:
+                tokens = [torch.tensor(self._state[r.request_id]["generated"][-1])
+                          for r in decode]
+                tables = [self._state[r.request_id]["table"] for r in decode]
+                for r, logits in zip(decode, self.model.decode_batch(tokens, tables)):
+                    self._sample(r, logits)
         else:
             for r in decode:
                 st = self._state[r.request_id]
@@ -122,6 +129,27 @@ class Engine:
         st = self._state[req.request_id]
         st["generated"].append(token)
         req.num_generated += 1
+
+    def _decode_with_graph(self, decode):
+        """CUDA-graph decode: re-capture when the running batch changes,
+        otherwise update the static input buffers and replay."""
+        key = tuple(sorted(r.request_id for r in decode))
+        tables = [self._state[r.request_id]["table"] for r in decode]
+        bs = self.scheduler.block_size
+        if key != self._graph_key:
+            nb_max = max((len(t.blocks) + 2) for t in tables)
+            buf = self.model.capture_decode_graph(tables, nb_max)
+            self._graph = buf
+            self._graph_key = key
+        # Python-side block allocation for the token each request writes now
+        for t in tables:
+            if t.num_tokens >= len(t.blocks) * bs:
+                t.blocks.append(self.kv.pool.allocate())
+        tokens = [self._state[r.request_id]["generated"][-1] for r in decode]
+        logits = self.model.replay_decode_graph(self._graph, tables, tokens)
+        for i, r in enumerate(decode):
+            self._sample(r, logits[i])
+            tables[i].advance(1)   # mirror the KV this step wrote
 
     def _finish_completed(self):
         finished = []

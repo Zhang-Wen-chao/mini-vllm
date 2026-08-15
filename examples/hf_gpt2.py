@@ -112,6 +112,116 @@ class HFGPT2Paged:
             table.advance(1)
         return [row[0] for row in self.hf.lm_head(self.hf.transformer.ln_f(x))]
 
+    # -- CUDA graph decode -------------------------------------------------
+
+    def capture_decode_graph(self, tables, nb_max):
+        """Capture the batched decode forward as a CUDA graph.
+
+        All step-varying inputs live in static buffers that the caller
+        rewrites before each replay: tokens, positions, block ids (for the
+        gather), write targets (for the KV scatter) and the attention mask.
+        The graph is valid for the *same* batch size and block cap; the
+        engine re-captures when the running batch changes.
+        """
+        b = len(tables)
+        maxkv = nb_max * tables[0].pool.block_size
+        bs = tables[0].pool.block_size
+        buf = {
+            "pool": tables[0].pool,
+            "tokens": torch.zeros(b, 1, dtype=torch.long, device=self.device),
+            "positions": torch.zeros(b, 1, dtype=torch.long,
+                                     device=self.device),
+            "block_ids": torch.zeros(b, nb_max, dtype=torch.long,
+                                     device=self.device),
+            "write_blocks": torch.zeros(b, dtype=torch.long, device=self.device),
+            "write_offsets": torch.zeros(b, dtype=torch.long, device=self.device),
+            "mask": torch.zeros(b, 1, 1, maxkv, dtype=self.dtype,
+                                device=self.device),
+            "logits": None,
+            "graph": None,
+        }
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        # The warmup + capture runs write garbage KV into the pool (the
+        # scatter uses the zero-initialized write buffers); snapshot the
+        # slots they touch and restore them afterwards.
+        pool = buf["pool"]
+        snapshot = pool.cache[:, :, 0, 0].clone()
+        with torch.cuda.stream(s):
+            for _ in range(3):
+                self._graph_decode_forward(buf)
+        torch.cuda.current_stream().wait_stream(s)
+        g = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(g):
+            buf["logits"] = self._graph_decode_forward(buf)
+        pool.cache[:, :, 0, 0] = snapshot
+        buf["graph"] = g
+        return buf
+
+    def replay_decode_graph(self, buf, tables, token_ids):
+        """Update the static input buffers and replay the captured graph.
+
+        Returns (B, V) logits. Must be preceded by Python-side allocation of
+        any new KV block each request needs this step.
+        """
+        b = len(tables)
+        bs = tables[0].pool.block_size
+        positions = [t.num_tokens for t in tables]
+        write_blocks = [t.blocks[p // bs] for t, p in zip(tables, positions)]
+        write_offsets = [p % bs for p in positions]
+        lens = [p + 1 for p in positions]
+        buf["tokens"].copy_(torch.tensor(token_ids, device=self.device)
+                            .view(b, 1))
+        buf["positions"].copy_(torch.tensor(positions, device=self.device)
+                               .view(b, 1))
+        buf["write_blocks"].copy_(
+            torch.tensor(write_blocks, device=self.device))
+        buf["write_offsets"].copy_(
+            torch.tensor(write_offsets, device=self.device))
+        buf["block_ids"].zero_()
+        for i, t in enumerate(tables):
+            buf["block_ids"][i, :len(t.blocks)] = torch.tensor(
+                t.blocks, device=self.device)
+        buf["mask"].fill_(0.0)
+        for i in range(b):
+            buf["mask"][i, :, :, lens[i]:] = float("-inf")
+        buf["graph"].replay()
+        return buf["logits"][:, 0]
+
+    def _graph_decode_forward(self, buf):
+        """The captured decode forward: static shapes only, no Python flow."""
+        from torch.nn.functional import scaled_dot_product_attention
+        b = buf["tokens"].shape[0]
+        t = 1
+        bs = buf["pool"].block_size
+        pool = buf["pool"]
+        nb_max = buf["block_ids"].shape[1]
+        maxkv = buf["mask"].shape[-1]
+        x = self.hf.transformer.wte(buf["tokens"]) + \
+            self.hf.transformer.wpe(buf["positions"])
+        flat = buf["block_ids"].flatten()
+        for l, block in enumerate(self.hf.transformer.h):
+            ln = block.ln_1(x)
+            qkv = (ln @ block.attn.c_attn.weight +
+                   block.attn.c_attn.bias).split(self.n_heads * self.head_dim,
+                                                 dim=-1)
+            q = qkv[0].view(b, t, self.n_heads, self.head_dim).transpose(1, 2)
+            k = qkv[1].view(b, t, self.n_heads, self.head_dim)
+            v = qkv[2].view(b, t, self.n_heads, self.head_dim)
+            pool.cache[0, l, buf["write_blocks"], buf["write_offsets"]] = k[:, 0]
+            pool.cache[1, l, buf["write_blocks"], buf["write_offsets"]] = v[:, 0]
+            kk = pool.cache[0, l].index_select(0, flat).view(
+                b, nb_max * bs, self.n_heads, self.head_dim).transpose(1, 2)
+            vv = pool.cache[1, l].index_select(0, flat).view(
+                b, nb_max * bs, self.n_heads, self.head_dim).transpose(1, 2)
+            o = scaled_dot_product_attention(q, kk, vv, attn_mask=buf["mask"])
+            o = o.transpose(1, 2).reshape(b, t, self.n_heads * self.head_dim)
+            x = x + (o @ block.attn.c_proj.weight + block.attn.c_proj.bias)
+            h = block.ln_2(x)
+            x = x + F.gelu(h @ block.mlp.c_fc.weight + block.mlp.c_fc.bias) @ \
+                block.mlp.c_proj.weight + block.mlp.c_proj.bias
+        return self.hf.lm_head(self.hf.transformer.ln_f(x))
+
     def _run_layers_batch(self, x, tables, lens, query_starts):
         from mini_vllm.paged_attention import batched_attention
         device = x.device
@@ -125,11 +235,28 @@ class HFGPT2Paged:
             q = qkv[0].view(b, t, self.n_heads, self.head_dim)
             k = qkv[1].view(b, t, self.n_heads, self.head_dim)
             v = qkv[2].view(b, t, self.n_heads, self.head_dim)
-            for i in range(b):
-                tables[i].append(l, k[i].reshape(-1, self.n_heads,
-                                                 self.head_dim),
-                                 v[i].reshape(-1, self.n_heads,
-                                              self.head_dim))
+            pool = tables[0].pool
+            if t == 1:
+                # decode: vectorized append via one scatter per K/V
+                for i in range(b):
+                    tbl = tables[i]
+                    if tbl.num_tokens >= len(tbl.blocks) * tbl.block_size:
+                        tbl.blocks.append(pool.allocate())
+                positions = torch.tensor([tbl.num_tokens for tbl in tables],
+                                         device=device)
+                block_ids = torch.tensor(
+                    [tbl.blocks[p // pool.block_size]
+                     for tbl, p in zip(tables, positions.tolist())],
+                    device=device)
+                offsets = positions % pool.block_size
+                pool.cache[0, l, block_ids, offsets] = k[:, 0]
+                pool.cache[1, l, block_ids, offsets] = v[:, 0]
+            else:
+                for i in range(b):
+                    tables[i].append(l, k[i].reshape(-1, self.n_heads,
+                                                     self.head_dim),
+                                     v[i].reshape(-1, self.n_heads,
+                                                  self.head_dim))
             kk = torch.zeros(b, maxkv, self.n_heads, self.head_dim,
                              device=device, dtype=x.dtype)
             vv = torch.zeros_like(kk)
