@@ -66,40 +66,40 @@ pytest                 # 30 个 CPU 单测, 全绿
 python examples/run_engine.py
 ```
 
-## 与 vLLM 的对比（L20, 2026-08-14，公平版）
+## 与 vLLM 的对比（L20, 2026-08-15，公平版）
 
-`gpt2` + 8 并发 + 贪心，fp16，vLLM 0.8.5 **V1 引擎**（修复了内存配置后满血），
-双方都先 warmup（捕获成本与 init 一起排除），**在空闲 GPU 上实测**：
+fp16、V1 引擎（满血）、双方 warmup 后计时、空闲 GPU、TTFT/TPOT 同口径：
 
-| 指标 | mini-vllm | vLLM V1 | 比值（mini/vllm） |
-|---|---|---|---|
-| TTFT（16-token prompt） | **1 ms** | 7-17 ms | 0.07-0.17x |
-| TPOT | **0.2 ms** | 0.3-0.6 ms | 0.34-0.74x |
-| 稳态吞吐 | **5342-5377 tok/s** | 1744-3826 tok/s | 1.40-3.07x |
+| 模型 | 指标 | mini-vllm | vLLM V1 | 比值（mini/vllm） |
+|---|---|---|---|---|
+| gpt2 (124M) | 稳态吞吐 | 5342-5377 tok/s | 1744-3826 tok/s | 1.40-3.07x |
+| gpt2 | TTFT / TPOT | 1 ms / 0.2 ms | 7-17 ms / 0.3-0.6 ms | 0.07x / 0.34-0.74x |
+| Qwen2.5-1.5B | 吞吐 | 991 tok/s | 1266 tok/s | 0.78x |
+| Qwen2.5-1.5B | TTFT / TPOT | 8 ms / 1.0 ms | 7 ms / 0.8 ms | 1.13x / 1.29x |
+| **Qwen2.5-7B** | 吞吐 (b=8) | **332 tok/s** | **333 tok/s** | **1.00x（打平）** |
+| Qwen2.5-7B | TTFT / TPOT | 27 ms / 3.1 ms | 46 ms / 2.9 ms | **0.57x / 1.04x** |
 
-**重要教训（benchmark 卫生）**：服务器 GPU 0 被其他任务占用 80%，之前所有
-数字都在竞争环境下测得（vLLM 抖动 1744-4512、mini 出现 20-30ms 假慢步）。
-换空闲 GPU 后 mini 数字纹丝不动（5342-5377），vLLM 仍波动——结论建立在 3 次
-重复的稳定区间上。
+**完整结论（三个模型尺寸的诚实图景）**：
+- 小模型（124M）：启动开销主导，CUDA graph 甜区 → mini 大幅领先
+- 中模型（1.5B）：vLLM 的 kernel 优势显现 → mini 落后 ~1.3x
+- **大模型（7B）：双方逼近计算瓶颈 → 完全打平**（吞吐 1.00x，TTFT mini 快 2 倍）
 
-**历史路径**（同一 workload 的演进）：35x → 5.8x → 4.4x → 4.2x → 2.9x → 1.16x
-（V0+fp32，有偏差）→ **反超（V1+fp16，空闲 GPU）**。关键手段：批量前向 →
-块表张量化 → 批量 scatter → CUDA graph decode（KV 长度分桶）→ **CUDA graph
-prefill（prompt 长度分桶）+ 启动时 warmup 预捕获（图按 batch 大小复用）**。
+"大模型 vLLM 一定赢"的直觉被证伪：7B 上 mini-vllm 的 CUDA graph + 合并投影
+与 vLLM 的融合 kernel 打成平手。剩余差距（1.5B 的 1.3x）是微型 matmul 的
+物理性低效（batch=8 的 decode matmul 只有 ~1% 利用率），双方同受其困。
 
-**诚实保留意见**：
-1. gpt2 是 124M 小模型，kernel 启动开销主导——CUDA graph 恰好吃满这个甜区；
-   7B+ 模型上 vLLM 的融合 kernel 优势会显现
-2. vLLM V1 跑在 NGC torch 2.6 容器里（非标准部署），可能有隐藏劣势
-3. 只测了单卡、单模型、贪心采样；未覆盖大 batch、前缀共享、内存压力
+**Qwen/Llama 适配器**（`examples/hf_llama.py`）：RMSNorm + RoPE + SwiGLU +
+GQA + 分页 KV，复用 HF 的 rotary 保证数值一致；合并 qkv/gateup 投影（注意
+Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致。
 
-**CUDA graph 的坑**（都已解决并记录）：捕获期污染 KV 池（快照/恢复）、fp16
-bool mask 精度损失（必须 float(-inf)）、块表按 prompt+max_new 预留、图按
-batch 大小而非请求 id 做键（否则 warmup 白做）。
+**踩过的坑**（全部已解决并记录）：
+1. `0.0 × -inf = NaN`——静态因果 mask 不能乘出来，必须 `torch.where`
+2. HF `apply_rotary_pos_emb` 要 `(B, H, S, D)` 布局且 q/k 一起转
+3. 合并投影的权重**逐层不同**，且 Qwen2 的 qkv 带 bias
+4. prefill 图里 padded 位置的 scatter 会覆盖真实 KV → scratch 块
+5. 基准卫生：GPU 0 被占 80% 时所有数字作废；跑完必须释放显存再跑对方
 
-对比脚本：`examples/bench_fair.py`（TTFT/TPOT/吞吐，双方同口径）。
-vLLM 0.8.5 在此环境需 `VLLM_USE_V1=0` 已不需要——V1 修好可用；
-`gpu_memory_utilization=0.9` 是 V1 正常工作的前提。
+对比脚本：`examples/bench_fair.py`（`--model` 可选 gpt2 / Qwen2.5-*）。
 
 ## 验证方法
 
