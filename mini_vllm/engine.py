@@ -137,7 +137,10 @@ class Engine:
         tables = [self._state[r.request_id]["table"] for r in decode]
         bs = self.scheduler.block_size
         if key != self._graph_key:
-            nb_max = max((len(t.blocks) + 2) for t in tables)
+            # reserve room for the whole generation (prompt + max_new_tokens)
+            nb_max = max(
+                (self._state[r.request_id]["prompt_ids"].shape[0] +
+                 r.max_new_tokens + bs - 1) // bs + 1 for r in decode)
             buf = self.model.capture_decode_graph(tables, nb_max)
             self._graph = buf
             self._graph_key = key
@@ -147,8 +150,10 @@ class Engine:
                 t.blocks.append(self.kv.pool.allocate())
         tokens = [self._state[r.request_id]["generated"][-1] for r in decode]
         logits = self.model.replay_decode_graph(self._graph, tables, tokens)
+        sampled = logits.argmax(dim=-1).tolist()   # one sync for the batch
         for i, r in enumerate(decode):
-            self._sample(r, logits[i])
+            self._state[r.request_id]["generated"].append(sampled[i])
+            r.num_generated += 1
             tables[i].advance(1)   # mirror the KV this step wrote
 
     def _finish_completed(self):

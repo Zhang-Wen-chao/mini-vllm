@@ -68,34 +68,40 @@ python examples/run_engine.py
 
 ## 与 vLLM 的对比（L20, 2026-08-14）
 
-`gpt2` + 8 个并发请求 + 贪心采样，mini-vllm vs vLLM 0.8.5（FP32）：
+`gpt2` + 8 个并发请求 + 贪心采样，mini-vllm vs vLLM 0.8.5（`VLLM_USE_V1=0`）：
 
-| 版本 | mini 吞吐 | vLLM 吞吐 | 差距 | 输出一致性 |
-|---|---|---|---|---|
-| 初版（逐请求串行前向） | 73.8 tok/s | ~2600 tok/s | 35x | 8/8 逐 token 一致 |
-| 批量 prefill/decode | 257 tok/s | ~1500 tok/s | 5.8x | 8/8 |
-| + 块表张量化 gather | 331 tok/s | ~1500 tok/s | 4.4x | 8/8 |
-| + 批量 append scatter | 360 tok/s | ~1500 tok/s | 4.2x | 8/8 |
-| **+ CUDA graph decode** | **522 tok/s** | ~1500 tok/s | **2.9x** | **8/8** |
+| 精度 | 场景 | mini 吞吐 | vLLM 吞吐 | 差距 | 一致性 |
+|---|---|---|---|---|---|
+| FP32 | max_new=20 | 522 tok/s | ~1500 tok/s | 2.9x | 8/8 逐 token |
+| FP32 | max_new=100 | **1612 tok/s** | 1867 tok/s | **1.16x** | 8/8 逐 token |
+| FP32 | 稳态 decode | **3666 tok/s** | ~2673 tok/s | **mini 更快** | 8/8 |
+| FP16 | max_new=100 | 1476 tok/s | 2121 tok/s | 1.46x | 7/8（1 个近邻平局） |
 
-**提速手段**（都已集成进引擎，全程保持逐 token 等价）：
+**从 35x 到 1.16x 的完整路径**：
 
-1. **批量 prefill/decode**：整批请求合并成一次前向（每行掩码 + padded 注意力），
-   73.8 → 257 tok/s（3.5x）
-2. **块表张量化 gather**：`index_select` 一次取整批 KV（vLLM block_tables 同款设计）
-3. **批量 append scatter**：decode 写入用一次高级索引散射代替逐请求循环
-4. **CUDA graph decode**：静态缓冲 + 批量变化时重捕获；decode 步零启动开销
+| 版本 | 吞吐 | 说明 |
+|---|---|---|
+| 初版（逐请求串行前向） | 73.8 tok/s | 基线 |
+| 批量 prefill/decode | 257 tok/s | 整批一次前向 |
+| + 块表张量化 gather | 331 tok/s | index_select 一次取整批 KV |
+| + 批量 append scatter | 360 tok/s | 一次高级索引散射 |
+| + CUDA graph decode | 522 tok/s | 静态缓冲 + 批量变化时重捕获 |
+| + 批量采样 + 长生成摊销 | **1612 tok/s** | 捕获/prefill 固定成本被摊销 |
 
 **CUDA graph 的三个真实坑**（都已解决并记录）：
 - 捕获期（warmup+capture）会用垃圾缓冲**真实执行 scatter 污染 KV 池** → 捕获前后快照/恢复
 - fp16 下 SDPA 的 **bool 型 attn_mask 有精度损失**（padding 区污染 softmax 统计），
   必须用 float(-inf) mask
+- 块表缓冲要按 **prompt + max_new_tokens** 预留，否则生成超长时溢出
 - `torch.compile` 是死路（慢 100x）：动态形状 + Python 循环导致 graph 处处断点——
   这正说明了 vLLM 为何必须写自定义 PagedAttention kernel
 
-**剩余 2.9x 差距 = 明确的优化清单**：融合 PagedAttention kernel（消除
-gather/pad/mask 中间张量）、kernel 内联 softmax（消除 fp16 累积误差——fp16 下
-7/8 一致，1 个近邻平局分歧由此而来）。
+**短生成（max_new=20）差距大的原因**：mini 的 CUDA graph 捕获（~200ms）和 eager
+prefill 是固定成本，生成越短占比越高；vLLM 在启动时预捕获所有 batch 桶。长生成下
+两者差距收敛到 ~15%。
+
+**剩余差距 = 明确的优化清单**：融合 PagedAttention kernel（消除 gather/pad/mask
+中间张量）、kernel 内联 softmax（消除 fp16 累积误差）。
 
 对比脚本：`examples/compare_vllm.py`（需要装了 vLLM 的容器；
 vLLM 0.8.5 在此环境需 `VLLM_USE_V1=0` 且 transformers 固定 4.49）。
