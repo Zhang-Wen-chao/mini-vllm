@@ -127,14 +127,14 @@ class HFGPT2Paged:
         maxkv = nb_max * bs
         q_idx = torch.arange(bucket_len, device=self.device)
         s_idx = torch.arange(maxkv, device=self.device)
-        causal = (q_idx[:, None] > s_idx[None, :])  # (L, S): s > q
+        causal = (q_idx[:, None] < s_idx[None, :])  # (L, S): s > q
         buf = {
             "pool": tables[0].pool,
             "input_ids": torch.zeros(b, bucket_len, dtype=torch.long,
                                      device=self.device),
             "beyond": torch.zeros(b, 1, maxkv, dtype=self.dtype,
                                   device=self.device),
-            "causal": causal.to(self.dtype) * float("-inf"),
+            "causal": torch.where(causal, torch.tensor(float("-inf"), dtype=self.dtype, device=self.device), torch.zeros((), dtype=self.dtype, device=self.device)),
             "block_ids": torch.zeros(b, nb_max, dtype=torch.long,
                                      device=self.device),
             "write_blocks": torch.zeros(b, bucket_len, dtype=torch.long,

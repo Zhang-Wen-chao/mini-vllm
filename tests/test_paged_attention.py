@@ -92,3 +92,39 @@ def test_fp32_still_matches_within_tolerance():
                                   total_tokens=20)
         ref = dense_attention(query, k, v, causal=True)
         assert torch.allclose(out, ref, atol=1e-4, rtol=1e-4)
+
+
+def test_gqa_expansion_matches_dense():
+    # kv_heads=2, q_heads=4: paged attention must replicate the expanded
+    # dense attention exactly
+    torch.manual_seed(0)
+    nq, kv_heads, q_heads, hd = 6, 2, 4, 16
+    pool = BlockPool(num_blocks=4, block_size=4, num_heads=kv_heads,
+                     head_dim=hd, dtype=torch.float64)
+    table = BlockTable(pool)
+    k = torch.randn(nq, kv_heads, hd, dtype=torch.float64)
+    v = torch.randn(nq, kv_heads, hd, dtype=torch.float64)
+    table.append(0, k, v)
+    table.advance(nq)
+    query = torch.randn(nq, q_heads, hd, dtype=torch.float64)
+    out = paged_attention(query, table, causal=True, total_tokens=nq)
+    # dense reference with expanded heads
+    idx = torch.arange(q_heads) // (q_heads // kv_heads)
+    k_full = k[:, idx]
+    v_full = v[:, idx]
+    ref = dense_attention(query, k_full, v_full, causal=True)
+    assert out.shape == (nq, q_heads, hd)
+    assert torch.allclose(out, ref, atol=1e-8)
+
+
+def test_gqa_batched_attention():
+    torch.manual_seed(0)
+    from mini_vllm.paged_attention import batched_attention
+    b, s, kv_heads, q_heads, hd = 2, 5, 2, 4, 16
+    q = torch.randn(b, 1, q_heads, hd, dtype=torch.float64)
+    k = torch.randn(b, s, kv_heads, hd, dtype=torch.float64)
+    v = torch.randn(b, s, kv_heads, hd, dtype=torch.float64)
+    out = batched_attention(q, k, v, mask=None)
+    idx = torch.arange(q_heads) // (q_heads // kv_heads)
+    ref = batched_attention(q, k[:, :, idx], v[:, :, idx], mask=None)
+    assert torch.allclose(out, ref)

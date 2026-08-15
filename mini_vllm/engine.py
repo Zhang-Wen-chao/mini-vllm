@@ -32,7 +32,8 @@ class Engine:
             dtype = getattr(model, "dtype", None)
             if dtype is None:
                 dtype = next(model.parameters()).dtype
-        self.kv = KVBlockManager(num_blocks, block_size, model.n_heads,
+        self.kv = KVBlockManager(num_blocks, block_size,
+                                 getattr(model, "n_kv_heads", model.n_heads),
                                  model.head_dim, num_layers=model.n_layers,
                                  device=device, dtype=dtype)
         self.scheduler = Scheduler(block_size=block_size,

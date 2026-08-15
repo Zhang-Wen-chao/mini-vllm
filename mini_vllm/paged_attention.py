@@ -49,6 +49,12 @@ def paged_attention(query, table, layer=0, causal=True, scale=None,
         num_keys = block_hi - block_pos
         k = pool.cache[0, layer, block_id][:num_keys]  # (S, H, D)
         v = pool.cache[1, layer, block_id][:num_keys]
+        # GQA: repeat K/V heads to match the query heads
+        if k.shape[1] != num_heads:
+            repeat = num_heads // k.shape[1]
+            idx = torch.arange(num_heads, device=query.device) // repeat
+            k = k[:, idx]
+            v = v[:, idx]
 
         scores = torch.einsum("qhd,shd->qhs", query, k) * scale  # (nq, H, S)
         if causal:
@@ -86,6 +92,12 @@ def batched_attention(q, k, v, mask=None, scale=None):
     """
     if scale is None:
         scale = q.shape[-1] ** -0.5
+    # GQA: repeat K/V heads to match the query heads
+    if k.shape[-2] != q.shape[-2]:
+        repeat = q.shape[-2] // k.shape[-2]
+        idx = torch.arange(q.shape[-2], device=q.device) // repeat
+        k = k[..., idx, :]
+        v = v[..., idx, :]
     scores = torch.einsum("bqhd,bshd->bqhs", q, k) * scale
     if mask is not None:
         scores = scores.masked_fill(mask.unsqueeze(2), float("-inf"))
