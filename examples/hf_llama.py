@@ -25,8 +25,40 @@ class HFQwenPaged:
         self.head_dim = cfg.hidden_size // cfg.num_attention_heads
         self.n_layers = cfg.num_hidden_layers
         self.hidden_size = cfg.hidden_size
+        # merged projections per layer: qkv as one matmul, gate/up as one
+        with torch.no_grad():
+            self.w_qkv = [
+                torch.cat([layer.self_attn.q_proj.weight,
+                           layer.self_attn.k_proj.weight,
+                           layer.self_attn.v_proj.weight], dim=0).to(
+                    self.device)
+                for layer in hf_model.model.layers]
+            self.b_qkv = [
+                torch.cat([layer.self_attn.q_proj.bias,
+                           layer.self_attn.k_proj.bias,
+                           layer.self_attn.v_proj.bias], dim=0).to(
+                    self.device)
+                for layer in hf_model.model.layers]
+            self.w_gateup = [
+                torch.cat([layer.mlp.gate_proj.weight,
+                           layer.mlp.up_proj.weight], dim=0).to(self.device)
+                for layer in hf_model.model.layers]
 
     # -- layer primitives --------------------------------------------------
+
+    def _qkv(self, x, l):
+        """Merged q/k/v projection -> (q, k, v) in (T, H, D) layout."""
+        qkv = x @ self.w_qkv[l].T + self.b_qkv[l]
+        t = x.shape[0]
+        q = qkv[:, :self.n_heads * self.head_dim].view(
+            t, self.n_heads, self.head_dim)
+        k = qkv[:, self.n_heads * self.head_dim:
+                self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim
+                ].view(t, self.n_kv_heads, self.head_dim)
+        v = qkv[:, self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim:
+                ].view(t, self.n_kv_heads, self.head_dim)
+        return q, k, v
+
 
     def _rotate(self, q, k, pos_start, t):
         """Apply HF's rotary embeddings to q/k of shape (T, H, D)."""
@@ -43,9 +75,7 @@ class HFQwenPaged:
         """One self-attention block with paged attention (single sequence)."""
         layer = self.hf.model.layers[l]
         ln = layer.input_layernorm(x)
-        q = layer.self_attn.q_proj(ln).view(t, self.n_heads, self.head_dim)
-        k = layer.self_attn.k_proj(ln).view(t, self.n_kv_heads, self.head_dim)
-        v = layer.self_attn.v_proj(ln).view(t, self.n_kv_heads, self.head_dim)
+        q, k, v = self._qkv(ln, l)
         q, k = self._rotate(q, k, pos_start, t)
         table.append(l, k, v)
         o = paged_attention(q, table, layer=l, causal=True,
@@ -56,8 +86,10 @@ class HFQwenPaged:
     def _mlp_block(self, x, l):
         layer = self.hf.model.layers[l]
         h = layer.post_attention_layernorm(x)
-        gate = F.silu(layer.mlp.gate_proj(h))
-        up = layer.mlp.up_proj(h)
+        gateup = h @ self.w_gateup[l].T
+        half = gateup.shape[-1] // 2
+        gate = F.silu(gateup[..., :half])
+        up = gateup[..., half:]
         return x + layer.mlp.down_proj(gate * up)
 
     # -- streaming (single sequence) ---------------------------------------
@@ -118,12 +150,14 @@ class HFQwenPaged:
         device = self.device
         for l, layer in enumerate(self.hf.model.layers):
             ln = layer.input_layernorm(x)
-            q = layer.self_attn.q_proj(ln).view(
+            qkv = ln @ self.w_qkv[l].T + self.b_qkv[l]
+            q = qkv[:, :, :self.n_heads * self.head_dim].view(
                 b, t, self.n_heads, self.head_dim)
-            k = layer.self_attn.k_proj(ln).view(
-                b, t, self.n_kv_heads, self.head_dim)
-            v = layer.self_attn.v_proj(ln).view(
-                b, t, self.n_kv_heads, self.head_dim)
+            k = qkv[:, :, self.n_heads * self.head_dim:
+                    self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim
+                    ].view(b, t, self.n_kv_heads, self.head_dim)
+            v = qkv[:, :, self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim:
+                    ].view(b, t, self.n_kv_heads, self.head_dim)
             # rotary: per-row position = q_start + j
             positions = torch.arange(t, device=device)
             positions = positions.unsqueeze(0) + \
@@ -179,8 +213,10 @@ class HFQwenPaged:
             o = o.reshape(b, t, self.n_heads * self.head_dim)
             x = x + layer.self_attn.o_proj(o)
             h = layer.post_attention_layernorm(x)
-            x = x + layer.mlp.down_proj(
-                F.silu(layer.mlp.gate_proj(h)) * layer.mlp.up_proj(h))
+            gateup = h @ self.w_gateup[l].T
+            half = gateup.shape[-1] // 2
+            x = x + layer.mlp.down_proj(F.silu(gateup[..., :half]) *
+                                        gateup[..., half:])
         return x
 
     # -- CUDA graph decode ---------------------------------------------------
@@ -256,12 +292,14 @@ class HFQwenPaged:
         flat = buf["block_ids"].flatten()
         for l, layer in enumerate(self.hf.model.layers):
             ln = layer.input_layernorm(x)
-            q = layer.self_attn.q_proj(ln).view(b, 1, self.n_heads,
-                                                self.head_dim)
-            k = layer.self_attn.k_proj(ln).view(b, 1, self.n_kv_heads,
-                                                self.head_dim)
-            v = layer.self_attn.v_proj(ln).view(b, 1, self.n_kv_heads,
-                                                self.head_dim)
+            qkv = ln @ self.w_qkv[l].T + self.b_qkv[l]
+            q = qkv[:, :, :self.n_heads * self.head_dim].view(
+                b, 1, self.n_heads, self.head_dim)
+            k = qkv[:, :, self.n_heads * self.head_dim:
+                    self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim
+                    ].view(b, 1, self.n_kv_heads, self.head_dim)
+            v = qkv[:, :, self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim:
+                    ].view(b, 1, self.n_kv_heads, self.head_dim)
             cos, sin = self.hf.model.rotary_emb(q, buf["positions"])
             q, k = apply_rotary_pos_emb(q.transpose(1, 2), k.transpose(1, 2),
                                         cos, sin, unsqueeze_dim=1)
@@ -282,8 +320,10 @@ class HFQwenPaged:
             o = o.transpose(1, 2).reshape(b, 1, self.n_heads * self.head_dim)
             x = x + layer.self_attn.o_proj(o)
             h = layer.post_attention_layernorm(x)
-            x = x + layer.mlp.down_proj(
-                F.silu(layer.mlp.gate_proj(h)) * layer.mlp.up_proj(h))
+            gateup = h @ self.w_gateup[l].T
+            half = gateup.shape[-1] // 2
+            x = x + layer.mlp.down_proj(F.silu(gateup[..., :half]) *
+                                        gateup[..., half:])
         return self.hf.lm_head(self.hf.model.norm(x))
 
     # -- CUDA graph prefill -------------------------------------------------
@@ -371,12 +411,14 @@ class HFQwenPaged:
         flat = buf["block_ids"].flatten()
         for l, layer in enumerate(self.hf.model.layers):
             ln = layer.input_layernorm(x)
-            q = layer.self_attn.q_proj(ln).view(b, L, self.n_heads,
-                                                self.head_dim)
-            k = layer.self_attn.k_proj(ln).view(b, L, self.n_kv_heads,
-                                                self.head_dim)
-            v = layer.self_attn.v_proj(ln).view(b, L, self.n_kv_heads,
-                                                self.head_dim)
+            qkv = ln @ self.w_qkv[l].T + self.b_qkv[l]
+            q = qkv[:, :, :self.n_heads * self.head_dim].view(
+                b, L, self.n_heads, self.head_dim)
+            k = qkv[:, :, self.n_heads * self.head_dim:
+                    self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim
+                    ].view(b, L, self.n_kv_heads, self.head_dim)
+            v = qkv[:, :, self.n_heads * self.head_dim + self.n_kv_heads * self.head_dim:
+                    ].view(b, L, self.n_kv_heads, self.head_dim)
             positions = torch.arange(L, device=self.device)
             positions = positions.unsqueeze(0).expand(b, L)
             cos, sin = self.hf.model.rotary_emb(q, positions)
@@ -405,6 +447,8 @@ class HFQwenPaged:
             o = o.transpose(1, 2).reshape(b, L, self.n_heads * self.head_dim)
             x = x + layer.self_attn.o_proj(o)
             h = layer.post_attention_layernorm(x)
-            x = x + layer.mlp.down_proj(
-                F.silu(layer.mlp.gate_proj(h)) * layer.mlp.up_proj(h))
+            gateup = h @ self.w_gateup[l].T
+            half = gateup.shape[-1] // 2
+            x = x + layer.mlp.down_proj(F.silu(gateup[..., :half]) *
+                                        gateup[..., half:])
         return self.hf.lm_head(self.hf.model.norm(x))

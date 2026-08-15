@@ -28,6 +28,14 @@ PROMPTS = [
 ]
 
 
+def make_adapter(hf_model, model_name):
+    if "gpt" in model_name.lower():
+        from examples.hf_gpt2 import HFGPT2Paged
+        return HFGPT2Paged(hf_model)
+    from examples.hf_llama import HFQwenPaged
+    return HFQwenPaged(hf_model)
+
+
 def make_prompts(n, prompt_len, tok):
     base = PROMPTS[:n]
     # extend prompts to approximately prompt_len tokens by repeating
@@ -92,9 +100,9 @@ def mini_metrics(model, tok, prompts, max_new):
     }
 
 
-def vllm_metrics(tok, prompts, max_new):
+def vllm_metrics(tok, prompts, max_new, model_name="gpt2"):
     from vllm import LLM, SamplingParams
-    llm = LLM(model="gpt2", dtype="float16", max_model_len=1024,
+    llm = LLM(model=model_name, dtype="float16", max_model_len=2048,
               gpu_memory_utilization=0.9)
     llm.generate([prompts[0]], SamplingParams(temperature=0.0, max_tokens=4))
     sp1 = SamplingParams(temperature=0.0, max_tokens=1)
@@ -122,21 +130,25 @@ def main():
     parser.add_argument("--batch", type=int, default=8)
     parser.add_argument("--max-new", type=int, default=100)
     parser.add_argument("--prompt-len", type=int, default=16)
+    parser.add_argument("--model", default="gpt2")
     args = parser.parse_args()
 
-    tok = AutoTokenizer.from_pretrained("gpt2")
-    tok.pad_token = tok.eos_token
+    tok = AutoTokenizer.from_pretrained(args.model)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
     prompts = make_prompts(args.batch, args.prompt_len, tok)
     hf = AutoModelForCausalLM.from_pretrained(
-        "gpt2", torch_dtype=torch.float16).cuda().eval()
-    model = HFGPT2Paged(hf)
+        args.model, torch_dtype=torch.float16).cuda().eval()
+    model = make_adapter(hf, args.model)
 
-    print(f"== gpt2 fp16 | batch={args.batch} | prompt_len={args.prompt_len} "
+    print(f"== {args.model} fp16 | batch={args.batch} | prompt_len={args.prompt_len} "
           f"| max_new={args.max_new} ==")
     m = mini_metrics(model, tok, prompts, args.max_new)
     print(f"mini-vllm : TTFT {m['ttft_ms']:.0f} ms | TPOT {m['tpot_ms']:.1f} ms "
           f"| e2e {m['e2e_s']:.2f}s | {m['tok_s']:.0f} tok/s")
-    v = vllm_metrics(tok, prompts, args.max_new)
+    del model, hf
+    torch.cuda.empty_cache()
+    v = vllm_metrics(tok, prompts, args.max_new, args.model)
     print(f"vllm (V1): TTFT {v['ttft_ms']:.0f} ms | TPOT {v['tpot_ms']:.1f} ms "
           f"| e2e {v['e2e_s']:.2f}s | {v['tok_s']:.0f} tok/s")
     print(f"ratio: TTFT {m['ttft_ms']/v['ttft_ms']:.2f}x | "
