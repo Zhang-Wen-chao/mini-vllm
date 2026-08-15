@@ -79,6 +79,80 @@ class HFGPT2Paged:
         table.advance(1)
         return self.hf.lm_head(logits).squeeze(0)
 
+    # -- batched (padded) inference ---------------------------------------
+
+    def prefill_batch(self, input_ids_list, tables):
+        from mini_vllm.paged_attention import batched_attention
+        device = self.hf.transformer.wte.weight.device
+        b = len(input_ids_list)
+        lens = [x.shape[0] for x in input_ids_list]
+        max_len = max(lens)
+        padded = torch.zeros(b, max_len, dtype=torch.long, device=device)
+        for i, x in enumerate(input_ids_list):
+            padded[i, :lens[i]] = x.to(device)
+        x = self.hf.transformer.wte(padded) + \
+            self.hf.transformer.wpe(torch.arange(max_len, device=device))
+        x = self._run_layers_batch(x, tables, lens, [0] * b)
+        for i, table in enumerate(tables):
+            table.advance(lens[i])
+        logits = self.hf.lm_head(self.hf.transformer.ln_f(x))
+        return [logits[i, lens[i] - 1] for i in range(b)]
+
+    def decode_batch(self, token_ids, tables):
+        device = self.hf.transformer.wte.weight.device
+        b = len(token_ids)
+        tokens = torch.stack(token_ids).to(device).view(b)
+        positions = torch.tensor([t.num_tokens for t in tables],
+                                 device=device)
+        x = self.hf.transformer.wte(tokens.view(b, 1)) + \
+            self.hf.transformer.wpe(positions).unsqueeze(1)
+        lens = [t.num_tokens + 1 for t in tables]
+        x = self._run_layers_batch(x, tables, lens, [l - 1 for l in lens])
+        for table in tables:
+            table.advance(1)
+        return [row[0] for row in self.hf.lm_head(self.hf.transformer.ln_f(x))]
+
+    def _run_layers_batch(self, x, tables, lens, query_starts):
+        from mini_vllm.paged_attention import batched_attention
+        device = x.device
+        b, t, _ = x.shape
+        maxkv = max(lens)
+        for l, block in enumerate(self.hf.transformer.h):
+            ln = block.ln_1(x)
+            qkv = (ln @ block.attn.c_attn.weight +
+                   block.attn.c_attn.bias).split(self.n_heads * self.head_dim,
+                                                 dim=-1)
+            q = qkv[0].view(b, t, self.n_heads, self.head_dim)
+            k = qkv[1].view(b, t, self.n_heads, self.head_dim)
+            v = qkv[2].view(b, t, self.n_heads, self.head_dim)
+            for i in range(b):
+                tables[i].append(l, k[i].reshape(-1, self.n_heads,
+                                                 self.head_dim),
+                                 v[i].reshape(-1, self.n_heads,
+                                              self.head_dim))
+            kk = torch.zeros(b, maxkv, self.n_heads, self.head_dim,
+                             device=device, dtype=x.dtype)
+            vv = torch.zeros_like(kk)
+            for i in range(b):
+                pool = tables[i].pool
+                kk[i, :lens[i]] = pool.gather(0, l, tables[i].blocks, lens[i])
+                vv[i, :lens[i]] = pool.gather(1, l, tables[i].blocks, lens[i])
+            s_idx = torch.arange(maxkv, device=device)
+            q_idx = torch.arange(t, device=device)
+            lens_t = torch.tensor(lens, device=device)
+            starts = torch.tensor(query_starts, device=device)
+            beyond_len = s_idx[None, :] >= lens_t[:, None]
+            future = (starts[:, None, None] + q_idx[None, :, None]) < \
+                s_idx[None, None, :]
+            mask = beyond_len[:, None, :] | future
+            o = batched_attention(q, kk, vv, mask)
+            o = o.reshape(b, t, self.n_heads * self.head_dim)
+            x = x + (o @ block.attn.c_proj.weight + block.attn.c_proj.bias)
+            h = block.ln_2(x)
+            x = x + F.gelu(h @ block.mlp.c_fc.weight + block.mlp.c_fc.bias) @ \
+                block.mlp.c_proj.weight + block.mlp.c_proj.bias
+        return x
+
 
 def greedy_hf_reference(model, tokenizer, prompt_ids, max_new_tokens):
     """HF's own greedy generate as the ground truth."""

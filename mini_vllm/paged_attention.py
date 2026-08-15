@@ -72,6 +72,27 @@ def paged_attention(query, table, layer=0, causal=True, scale=None,
     return acc / sum_exp
 
 
+def batched_attention(q, k, v, mask=None, scale=None):
+    """Batched attention over a padded batch of sequences.
+
+    Args:
+        q: (B, Q, H, D) queries.
+        k, v: (B, S, H, D) padded K/V; positions beyond each sequence's real
+            length are garbage and must be masked.
+        mask: (B, Q, S) bool; True positions are ignored (set to -inf).
+
+    Returns:
+        (B, Q, H, D) attention output.
+    """
+    if scale is None:
+        scale = q.shape[-1] ** -0.5
+    scores = torch.einsum("bqhd,bshd->bqhs", q, k) * scale
+    if mask is not None:
+        scores = scores.masked_fill(mask.unsqueeze(2), float("-inf"))
+    probs = torch.softmax(scores, dim=-1)
+    return torch.einsum("bqhs,bshd->bqhd", probs, v)
+
+
 def dense_attention(query, k, v, causal=True, scale=None):
     """Reference implementation over the full contiguous K/V tensors.
 

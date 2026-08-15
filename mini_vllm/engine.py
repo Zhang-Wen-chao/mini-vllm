@@ -87,18 +87,41 @@ class Engine:
                 victim.num_generated = 0
 
     def _prefill_or_decode(self):
-        for req in list(self.scheduler.running):
-            if req.status != "RUNNING":
-                continue
-            st = self._state[req.request_id]
-            if req.num_generated == 0:
+        running = [r for r in self.scheduler.running if r.status == "RUNNING"]
+        if not running:
+            return
+        new = [r for r in running if r.num_generated == 0]
+        decode = [r for r in running if r.num_generated > 0]
+        batchable = hasattr(self.model, "prefill_batch") and \
+            hasattr(self.model, "decode_batch")
+        if batchable and new:
+            prompts = [self._state[r.request_id]["prompt_ids"] for r in new]
+            tables = [self._state[r.request_id]["table"] for r in new]
+            for r, logits in zip(new, self.model.prefill_batch(prompts, tables)):
+                self._sample(r, logits)
+        else:
+            for r in new:
+                st = self._state[r.request_id]
                 logits = self.model.prefill(st["prompt_ids"], st["table"])
-            else:
+                self._sample(r, logits)
+        if batchable and decode:
+            tokens = [torch.tensor(self._state[r.request_id]["generated"][-1])
+                      for r in decode]
+            tables = [self._state[r.request_id]["table"] for r in decode]
+            for r, logits in zip(decode, self.model.decode_batch(tokens, tables)):
+                self._sample(r, logits)
+        else:
+            for r in decode:
+                st = self._state[r.request_id]
                 logits = self.model.decode(
                     torch.tensor([st["generated"][-1]]), st["table"])
-            token = int(torch.argmax(logits[-1]))
-            st["generated"].append(token)
-            req.num_generated += 1
+                self._sample(r, logits)
+
+    def _sample(self, req, logits):
+        token = int(torch.argmax(logits))
+        st = self._state[req.request_id]
+        st["generated"].append(token)
+        req.num_generated += 1
 
     def _finish_completed(self):
         finished = []
