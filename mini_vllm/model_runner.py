@@ -149,13 +149,17 @@ class TinyTransformer(nn.Module):
                 tables[i].append(l, k[i].reshape(-1, k.shape[-2], k.shape[-1]),
                                     v[i].reshape(-1, v.shape[-2], v.shape[-1]))
             maxkv = max(lens)
-            kk = torch.zeros(b, maxkv, k.shape[-2], k.shape[-1],
-                             device=device, dtype=x.dtype)
-            vv = torch.zeros_like(kk)
+            pool = tables[0].pool
+            nb = max(len(t.blocks) for t in tables)
+            bt = torch.zeros(b, nb, dtype=torch.long, device=device)
             for i in range(b):
-                pool = tables[i].pool
-                kk[i, :lens[i]] = pool.gather(0, l, tables[i].blocks, lens[i])
-                vv[i, :lens[i]] = pool.gather(1, l, tables[i].blocks, lens[i])
+                bt[i, :len(tables[i].blocks)] = torch.tensor(
+                    tables[i].blocks, device=device)
+            flat = bt.flatten()
+            kk = pool.cache[0, l].index_select(0, flat)
+            vv = pool.cache[1, l].index_select(0, flat)
+            kk = kk.view(b, nb * pool.block_size, k.shape[-2], k.shape[-1])[:, :maxkv]
+            vv = vv.view(b, nb * pool.block_size, v.shape[-2], v.shape[-1])[:, :maxkv]
             # mask: hide (a) keys beyond a row's real length, (b) future keys
             s_idx = torch.arange(maxkv, device=device)
             q_idx = torch.arange(t, device=device)

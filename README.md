@@ -68,16 +68,26 @@ python examples/run_engine.py
 
 ## 与 vLLM 的对比（L20, 2026-08-14）
 
-`gpt2` + 8 个并发请求 + 贪心采样，mini-vllm vs vLLM 0.8.5：
+`gpt2` + 8 个并发请求 + 贪心采样，mini-vllm vs vLLM 0.8.5（FP32）：
 
-| 精度 | 输出一致性 | mini 吞吐 | vLLM 吞吐 | 说明 |
+| 版本 | mini 吞吐 | vLLM 吞吐 | 差距 | 输出一致性 |
 |---|---|---|---|---|
-| FP32 | **8/8 逐 token 一致**（去尾 EOS） | 73.8 tok/s | ~2600 tok/s | vLLM 用 CUDA kernel + CUDA graph + 真批量化 |
-| FP16 | 6/8 一致，2 个近邻平局分歧 | 45 tok/s (decode) | ~2300 tok/s | mini 的 fp16 online softmax 累积精度略低 |
+| 初版（逐请求串行前向） | 73.8 tok/s | ~2600 tok/s | 35x | 8/8 逐 token 一致 |
+| **批量化后**（一次前向/步） | 330.6 tok/s | 1468 tok/s | **4.4x** | 8/8 逐 token 一致 |
 
-**吞吐差距（~35-50x）是设计使然，如实记录**：mini-vllm 每步逐请求串行前向、
-无 CUDA graph、无 flash attention、无 kernel 融合。教学价值在机制正确（可逐
-token 复现 vLLM 输出），性能差距即优化空间清单。
+**提速手段**（都已集成进引擎，且保持逐 token 等价）：
+
+1. **批量 prefill/decode**：整批请求合并成一次前向（每行掩码 + padded SDPA），
+   73.8 → 257 tok/s（3.5x）
+2. **块表张量化 gather**：`index_select` 一次取整批 KV（替代逐请求 gather），
+   257 → 330 tok/s（+29%）
+3. 试过 `torch.compile`：**反向优化**（慢 100x）——动态形状 + 逐请求 Python
+   循环导致 graph 处处断点；这正说明了 vLLM 为何必须写自定义 PagedAttention
+   kernel 而不是靠编译优化
+
+**剩余 4.4x 差距 = 明确的优化清单**：融合 PagedAttention kernel（消除
+gather/pad/mask 中间张量）、CUDA Graph（消除启动开销）、kernel 内联 softmax
+（消除 fp16 累积误差——fp16 下 7/8 一致，2 个近邻平局分歧由此而来）。
 
 对比脚本：`examples/compare_vllm.py`（需要装了 vLLM 的容器；
 vLLM 0.8.5 在此环境需 `VLLM_USE_V1=0` 且 transformers 固定 4.49）。

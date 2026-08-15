@@ -133,10 +133,19 @@ class HFGPT2Paged:
             kk = torch.zeros(b, maxkv, self.n_heads, self.head_dim,
                              device=device, dtype=x.dtype)
             vv = torch.zeros_like(kk)
+            pool = tables[0].pool
+            nb = max(len(t.blocks) for t in tables)
+            bt = torch.zeros(b, nb, dtype=torch.long, device=device)
             for i in range(b):
-                pool = tables[i].pool
-                kk[i, :lens[i]] = pool.gather(0, l, tables[i].blocks, lens[i])
-                vv[i, :lens[i]] = pool.gather(1, l, tables[i].blocks, lens[i])
+                bt[i, :len(tables[i].blocks)] = torch.tensor(
+                    tables[i].blocks, device=device)
+            flat = bt.flatten()
+            kk = pool.cache[0, l].index_select(0, flat)
+            vv = pool.cache[1, l].index_select(0, flat)
+            kk = kk.view(b, nb * pool.block_size, self.n_heads,
+                         self.head_dim)[:, :maxkv]
+            vv = vv.view(b, nb * pool.block_size, self.n_heads,
+                         self.head_dim)[:, :maxkv]
             s_idx = torch.arange(maxkv, device=device)
             q_idx = torch.arange(t, device=device)
             lens_t = torch.tensor(lens, device=device)
