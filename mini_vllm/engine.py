@@ -39,8 +39,9 @@ class Engine:
                                    max_prefill_tokens=max_prefill_tokens,
                                    max_running_tokens=max_running_tokens)
         self._state = {}  # request_id -> {prompt_ids, generated, table}
-        self._graph = None      # captured decode graph buffers
-        self._graph_key = None  # request ids captured in the graph
+        self._graphs = {}      # (batch_key) -> {bucket_blocks: buf}
+        self._graph_buckets = None
+        self._graph_key = None  # request ids captured in the graphs
 
     # -- public API -------------------------------------------------------
 
@@ -62,6 +63,21 @@ class Engine:
         return list(st["prompt_ids"].tolist()) + st["generated"]
 
     # -- core loop --------------------------------------------------------
+
+    def warmup(self, batch_size, max_prompt_len, max_new_tokens=4):
+        """Pre-capture the CUDA graph ladders for a workload shape, the way
+        vLLM captures its graphs at init. Graphs are keyed by batch size, so
+        the real batch of the same size reuses them without re-capturing."""
+        import torch as _torch
+        for _ in range(batch_size):
+            ids = _torch.zeros(max_prompt_len, dtype=_torch.long)
+            self.add_request(ids, max_new_tokens=max_new_tokens)
+        while self.has_requests():
+            self.step()
+        self._state.clear()
+        self.scheduler.waiting.clear()
+        self.scheduler.running.clear()
+        self.scheduler.finished.clear()
 
     def step(self):
         self.scheduler.schedule(len(self.kv.pool.free_blocks))
@@ -98,10 +114,14 @@ class Engine:
         batchable = hasattr(self.model, "prefill_batch") and \
             hasattr(self.model, "decode_batch")
         if batchable and new:
-            prompts = [self._state[r.request_id]["prompt_ids"] for r in new]
-            tables = [self._state[r.request_id]["table"] for r in new]
-            for r, logits in zip(new, self.model.prefill_batch(prompts, tables)):
-                self._sample(r, logits)
+            if self.use_cuda_graph and \
+                    hasattr(self.model, "capture_prefill_graph"):
+                self._prefill_with_graph(new)
+            else:
+                prompts = [self._state[r.request_id]["prompt_ids"] for r in new]
+                tables = [self._state[r.request_id]["table"] for r in new]
+                for r, logits in zip(new, self.model.prefill_batch(prompts, tables)):
+                    self._sample(r, logits)
         else:
             for r in new:
                 st = self._state[r.request_id]
@@ -130,26 +150,74 @@ class Engine:
         st["generated"].append(token)
         req.num_generated += 1
 
+    def _prefill_with_graph(self, new):
+        """CUDA-graph prefill: bucket by prompt length, replay, sample."""
+        tables = [self._state[r.request_id]["table"] for r in new]
+        prompts = [self._state[r.request_id]["prompt_ids"] for r in new]
+        max_len = max(p.shape[0] for p in prompts)
+        buckets = getattr(self, "_prefill_buckets", None)
+        if buckets is None or self._prefill_key != len(new):
+            ladder = [32]
+            while ladder[-1] < max_len:
+                ladder.append(ladder[-1] * 2)
+            self._prefill_buckets = {
+                L: self.model.capture_prefill_graph(tables, L) for L in ladder
+            }
+            self._prefill_key = len(new)
+        bucket = None
+        for L in sorted(self._prefill_buckets):
+            if L >= max_len:
+                bucket = self._prefill_buckets[L]
+                break
+        logits = self.model.replay_prefill_graph(bucket, tables, prompts)
+        for i, r in enumerate(new):
+            self._sample(r, logits[i])
+            tables[i].advance(prompts[i].shape[0])
+
     def _decode_with_graph(self, decode):
-        """CUDA-graph decode: re-capture when the running batch changes,
-        otherwise update the static input buffers and replay."""
-        key = tuple(sorted(r.request_id for r in decode))
+        """CUDA-graph decode: capture a ladder of KV-length buckets when the
+        running batch changes, then replay the smallest bucket that fits."""
+        key = len(decode)   # graphs are reusable for any batch of this size
         tables = [self._state[r.request_id]["table"] for r in decode]
         bs = self.scheduler.block_size
         if key != self._graph_key:
-            # reserve room for the whole generation (prompt + max_new_tokens)
-            nb_max = max(
+            total_blocks = max(
                 (self._state[r.request_id]["prompt_ids"].shape[0] +
                  r.max_new_tokens + bs - 1) // bs + 1 for r in decode)
-            buf = self.model.capture_decode_graph(tables, nb_max)
-            self._graph = buf
+            # ladder of block caps, each doubling, up to the full reserve
+            buckets = [4]
+            while buckets[-1] < total_blocks:
+                buckets.append(buckets[-1] * 2)
+            self._graph_buckets = buckets
+            self._graphs = {
+                nb: self.model.capture_decode_graph(tables, nb)
+                for nb in buckets
+            }
             self._graph_key = key
         # Python-side block allocation for the token each request writes now
         for t in tables:
             if t.num_tokens >= len(t.blocks) * bs:
                 t.blocks.append(self.kv.pool.allocate())
+        # smallest bucket that still covers every running request's KV
+        max_blocks = max(len(t.blocks) for t in tables)
+        if max_blocks > self._graph_buckets[-1]:
+            # workload outgrew the ladder; extend it (safety net)
+            buckets = list(self._graph_buckets)
+            while buckets[-1] < max_blocks:
+                buckets.append(buckets[-1] * 2)
+            self._graph_buckets = buckets
+            self._graphs.update({
+                nb: self.model.capture_decode_graph(tables, nb)
+                for nb in buckets
+            })
+        nb = self._graph_buckets[0]
+        for cand in self._graph_buckets:
+            if cand >= max_blocks:
+                nb = cand
+                break
+        buf = self._graphs[nb]
         tokens = [self._state[r.request_id]["generated"][-1] for r in decode]
-        logits = self.model.replay_decode_graph(self._graph, tables, tokens)
+        logits = self.model.replay_decode_graph(buf, tables, tokens)
         sampled = logits.argmax(dim=-1).tolist()   # one sync for the batch
         for i, r in enumerate(decode):
             self._state[r.request_id]["generated"].append(sampled[i])

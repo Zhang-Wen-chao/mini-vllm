@@ -112,6 +112,120 @@ class HFGPT2Paged:
             table.advance(1)
         return [row[0] for row in self.hf.lm_head(self.hf.transformer.ln_f(x))]
 
+    # -- CUDA graph prefill -------------------------------------------------
+
+    def capture_prefill_graph(self, tables, bucket_len):
+        """Capture the batched prefill forward as a CUDA graph.
+
+        Static buffers hold the padded prompt ids, the per-row length mask
+        (beyond), the causal grid, and the scatter/gather block grids. The
+        graph is valid for one (batch size, bucket length) pair.
+        """
+        b = len(tables)
+        bs = tables[0].pool.block_size
+        nb_max = bucket_len // bs + 1
+        maxkv = nb_max * bs
+        q_idx = torch.arange(bucket_len, device=self.device)
+        s_idx = torch.arange(maxkv, device=self.device)
+        causal = (q_idx[:, None] > s_idx[None, :])  # (L, S): s > q
+        buf = {
+            "pool": tables[0].pool,
+            "input_ids": torch.zeros(b, bucket_len, dtype=torch.long,
+                                     device=self.device),
+            "beyond": torch.zeros(b, 1, maxkv, dtype=self.dtype,
+                                  device=self.device),
+            "causal": causal.to(self.dtype) * float("-inf"),
+            "block_ids": torch.zeros(b, nb_max, dtype=torch.long,
+                                     device=self.device),
+            "write_blocks": torch.zeros(b, bucket_len, dtype=torch.long,
+                                        device=self.device),
+            "write_offsets": torch.zeros(b, bucket_len, dtype=torch.long,
+                                         device=self.device),
+            "logits": None,
+            "graph": None,
+        }
+        s = torch.cuda.Stream()
+        s.wait_stream(torch.cuda.current_stream())
+        pool = buf["pool"]
+        snapshot = pool.cache[:, :, 0, 0].clone()
+        with torch.cuda.stream(s):
+            for _ in range(3):
+                self._graph_prefill_forward(buf)
+        torch.cuda.current_stream().wait_stream(s)
+        g = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(g):
+            buf["logits"] = self._graph_prefill_forward(buf)
+        pool.cache[:, :, 0, 0] = snapshot
+        buf["graph"] = g
+        return buf
+
+    def replay_prefill_graph(self, buf, tables, input_ids_list):
+        """Fill the static buffers and replay; returns logits per request."""
+        b = len(tables)
+        bucket_len = buf["input_ids"].shape[1]
+        bs = tables[0].pool.block_size
+        lens = [x.shape[0] for x in input_ids_list]
+        device = self.device
+        buf["input_ids"].zero_()
+        buf["beyond"].fill_(0.0)
+        buf["write_blocks"].zero_()
+        buf["write_offsets"].zero_()
+        buf["block_ids"].zero_()
+        for i, (t, ids) in enumerate(zip(tables, input_ids_list)):
+            buf["input_ids"][i, :lens[i]] = ids.to(device)
+            buf["beyond"][i, :, lens[i]:] = float("-inf")
+            nb = (lens[i] + bs - 1) // bs
+            while len(t.blocks) < nb:      # Python-side allocation
+                t.blocks.append(t.pool.allocate())
+            pos = torch.arange(lens[i], device=device)
+            blocks = torch.tensor([t.blocks[p // bs] for p in
+                                   range(lens[i])], device=device)
+            buf["write_blocks"][i, :lens[i]] = blocks
+            buf["write_offsets"][i, :lens[i]] = pos % bs
+            buf["block_ids"][i, :len(t.blocks)] = torch.tensor(
+                t.blocks, device=device)
+        buf["graph"].replay()
+        logits = buf["logits"]  # (b, bucket_len, V)
+        return [logits[i, lens[i] - 1] for i in range(b)]
+
+    def _graph_prefill_forward(self, buf):
+        from torch.nn.functional import scaled_dot_product_attention
+        b, L = buf["input_ids"].shape
+        pool = buf["pool"]
+        bs = pool.block_size
+        nb_max = buf["block_ids"].shape[1]
+        x = self.hf.transformer.wte(buf["input_ids"]) + \
+            self.hf.transformer.wpe(torch.arange(L, device=self.device))
+        flat = buf["block_ids"].flatten()
+        for l, block in enumerate(self.hf.transformer.h):
+            ln = block.ln_1(x)
+            qkv = (ln @ block.attn.c_attn.weight +
+                   block.attn.c_attn.bias).split(self.n_heads * self.head_dim,
+                                                 dim=-1)
+            q = qkv[0].view(b, L, self.n_heads, self.head_dim).transpose(1, 2)
+            k = qkv[1].view(b, L, self.n_heads, self.head_dim)
+            v = qkv[2].view(b, L, self.n_heads, self.head_dim)
+            pool.cache[0, l, buf["write_blocks"].flatten(),
+                       buf["write_offsets"].flatten()] = k.reshape(
+                           -1, self.n_heads, self.head_dim)
+            pool.cache[1, l, buf["write_blocks"].flatten(),
+                       buf["write_offsets"].flatten()] = v.reshape(
+                           -1, self.n_heads, self.head_dim)
+            kk = pool.cache[0, l].index_select(0, flat).view(
+                b, nb_max * bs, self.n_heads, self.head_dim).transpose(1, 2)
+            vv = pool.cache[1, l].index_select(0, flat).view(
+                b, nb_max * bs, self.n_heads, self.head_dim).transpose(1, 2)
+            # mask = beyond (per-row length, (b,1,S)) + causal (static (L,S))
+            mask = buf["beyond"] + buf["causal"].unsqueeze(0)
+            mask = mask.unsqueeze(1)  # (b, 1, Q, S)
+            o = scaled_dot_product_attention(q, kk, vv, attn_mask=mask)
+            o = o.transpose(1, 2).reshape(b, L, self.n_heads * self.head_dim)
+            x = x + (o @ block.attn.c_proj.weight + block.attn.c_proj.bias)
+            h = block.ln_2(x)
+            x = x + F.gelu(h @ block.mlp.c_fc.weight + block.mlp.c_fc.bias) @ \
+                block.mlp.c_proj.weight + block.mlp.c_proj.bias
+        return self.hf.lm_head(self.hf.transformer.ln_f(x))
+
     # -- CUDA graph decode -------------------------------------------------
 
     def capture_decode_graph(self, tables, nb_max):
