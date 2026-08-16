@@ -33,8 +33,8 @@ def test_schedule_respects_prefill_budget():
 
 def test_schedule_respects_kv_block_budget():
     s = Scheduler(block_size=4)
-    r1 = s.add_request(prompt_len=9)   # 3 blocks
-    r2 = s.add_request(prompt_len=5)   # 2 blocks
+    r1 = s.add_request(prompt_len=1, max_new_tokens=11)  # 3 blocks total
+    r2 = s.add_request(prompt_len=1, max_new_tokens=7)   # 2 blocks total
     new, _ = s.schedule(free_blocks=4)  # only 4 blocks free
     assert new == [r1]
     assert s.waiting == [r2]
@@ -85,10 +85,10 @@ def test_generation_progress():
 
 def test_preempted_request_can_be_rescheduled():
     s = Scheduler(block_size=4)
-    r1 = s.add_request(prompt_len=8)   # 2 blocks
-    s.schedule(free_blocks=4)
+    r1 = s.add_request(prompt_len=1, max_new_tokens=15)  # 4 blocks total
+    s.schedule(free_blocks=8)
     s.preempt()
     # after blocks are freed, it can be admitted again
-    new, _ = s.schedule(free_blocks=4)
+    new, _ = s.schedule(free_blocks=8)
     assert new == [r1]
     assert r1.status == "RUNNING"

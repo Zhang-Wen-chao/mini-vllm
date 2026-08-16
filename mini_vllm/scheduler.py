@@ -69,12 +69,14 @@ class Scheduler:
         """
         new_requests = []
         for candidate in list(self.waiting):
-            needed = self._blocks_for(candidate.prompt_len)
+            # full lifecycle blocks: prompt + max_new_tokens
+            needed = self._blocks_for(candidate.prompt_len +
+                                      candidate.max_new_tokens)
             if not self._fits(candidate, needed, free_blocks):
                 continue
             self.waiting.remove(candidate)
             candidate.status = "RUNNING"
-            candidate.kv_blocks = needed   # engine mirrors this on the pool
+            candidate.kv_blocks = needed   # full-lifecycle block budget
             self.running.append(candidate)
             new_requests.append(candidate)
         return new_requests, list(self.running)
@@ -103,7 +105,12 @@ class Scheduler:
         return (num_tokens + self.block_size - 1) // self.block_size
 
     def _fits(self, request, needed_blocks, free_blocks):
-        """Check that admitting `request` keeps the running batch in budget."""
+        """Check that admitting `request` keeps the running batch in budget.
+
+        `needed_blocks` covers the whole generation lifecycle (prompt +
+        max_new_tokens), so requests that can never finish inside the pool
+        are not admitted.
+        """
         prefill = sum(r.prompt_len for r in self.running) + request.prompt_len
         if prefill > self.max_prefill_tokens:
             return False

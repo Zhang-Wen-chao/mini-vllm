@@ -158,6 +158,9 @@ class Engine:
         max_len = max(p.shape[0] for p in prompts)
         buckets = getattr(self, "_prefill_buckets", None)
         if buckets is None or self._prefill_key != len(new):
+            if buckets is not None:
+                for old in buckets.values():
+                    self.kv.pool.free(old.get("scratch"))
             ladder = [32]
             while ladder[-1] < max_len:
                 ladder.append(ladder[-1] * 2)
@@ -170,6 +173,16 @@ class Engine:
             if L >= max_len:
                 bucket = self._prefill_buckets[L]
                 break
+        # make sure the pool can cover this prefill's blocks (preempt if not)
+        bs = self.scheduler.block_size
+        needed = sum((p.shape[0] + bs - 1) // bs for p in prompts)
+        while len(self.kv.pool.free_blocks) < needed:
+            victim = self.scheduler.preempt()
+            if victim is None:
+                break
+            self.kv.release_table(self._state[victim.request_id]["table"])
+            self._state[victim.request_id]["generated"] = []
+            victim.num_generated = 0
         logits = self.model.replay_prefill_graph(bucket, tables, prompts)
         for i, r in enumerate(new):
             self._sample(r, logits[i])
