@@ -2,6 +2,10 @@
 
 vLLM 核心思想的纯 PyTorch 教学实现：**分块 KV cache + PagedAttention + Continuous Batching**。
 
+> **这是一个教学项目，不是生产级推理框架**。它用 ~700 行纯 PyTorch 复现
+> vLLM 的核心机制，用于理解 KV cache 分页、连续批处理和 CUDA graph 加速；
+> 不是 vLLM 的替代品，也不应在生产环境中使用。
+
 与 [mini-megatron](https://github.com/Zhang-Wen-chao/mini-megatron)（训练侧并行）、
 [mini-deepspeed](https://github.com/Zhang-Wen-chao/mini-deepspeed)（ZeRO 分片）并列的
 推理侧教学项目。
@@ -146,3 +150,17 @@ Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致�
 - [x] Phase 3: Continuous batching 调度器 + 单测
 - [x] Phase 4: 引擎 + 端到端等价验证（含抢占）
 - [ ] Phase 5: HF 小模型 demo（L20 验证）
+
+## 可复现信息
+
+基准测试环境（2026-08-15/16）：
+
+- 硬件：NVIDIA L20（48 GB，Ada Lovelace），4 卡服务器中的空闲单卡
+- 软件：PyTorch 2.6.0+cu124，transformers 4.49.0，vLLM 0.8.5（V1 引擎，
+  `gpu_memory_utilization=0.9`），CUDA 12.4
+- 方法：双方 warmup 后计时（捕获/init 成本排除）；TTFT 用单请求
+  max_tokens=1 测量；TPOT = 稳态 decode 每 token 时间；贪心采样；
+  同一组 prompt、同一模型权重
+- 复现命令：`python examples/bench_fair.py --model Qwen/Qwen2.5-7B --batch 8`
+- 结果随源码版本演进：本仓库 git 历史记录每一步改动；基准数字对应
+  2026-08 提交，不代表其他硬件/软件版本下的表现
