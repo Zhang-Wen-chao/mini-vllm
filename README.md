@@ -99,7 +99,29 @@ Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致�
 4. prefill 图里 padded 位置的 scatter 会覆盖真实 KV → scratch 块
 5. 基准卫生：GPU 0 被占 80% 时所有数字作废；跑完必须释放显存再跑对方
 
-对比脚本：`examples/bench_fair.py`（`--model` 可选 gpt2 / Qwen2.5-*）。
+## 已知限制与压力测试结论（2026-08-16）
+
+压力测试（Qwen2.5-0.5B，动态 batch、混合 max_new、显存压力）结论：
+
+| 检查 | 结果 |
+|---|---|
+| 动态 batch 正确性 | 5/6 逐 token 一致；1 个 **fp16 近邻平局翻转**（logits 差 <0.04，einsum 与 SDPA 舍入不同翻转 argmax，两路径都在 fp16 精度内） |
+| 显存归还 | 511/512（1 个为 prefill 图的**活跃** scratch 块，非泄漏） |
+| 抢占压力（8 块池） | 24 步完成，无崩溃，无泄漏 |
+
+**已修复的真 bug**：
+1. **抢占崩溃**：调度器准入只算 prefill 块数，生成中途把池子耗尽 → 崩溃。
+   修复：准入按**全生命周期块数**（prompt + max_new_tokens）判定。
+2. **scratch 块泄漏**：prefill 图重捕获时旧 scratch 块不释放 → 已修。
+
+**已知且接受的行为**：
+1. **fp16 近邻平局**：不同注意力实现（einsum vs SDPA）舍入差异可翻转平局
+   argmax；工业方案是 kernel 内 fp32 累积（vLLM 的做法），mini 未做。
+2. **动态 batch 重捕获停顿**：请求完成/加入改变 batch 大小 → 重捕获全部图
+   （~200ms/次）。图按精确 batch 大小做键；vLLM 按 batch 分桶预捕获避免
+   此开销。这是下一个明确优化项（batch 分桶 + 行填充）。
+
+## 对比脚本
 
 ## 验证方法
 
