@@ -22,9 +22,12 @@ from .scheduler import Scheduler
 class Engine:
     def __init__(self, model, block_size=16, num_blocks=64,
                  max_prefill_tokens=256, max_running_tokens=512,
-                 device=None, dtype=None, use_cuda_graph=False):
+                 device=None, dtype=None, use_cuda_graph=False,
+                 temperature=0.0, top_p=1.0):
         self.model = model
         self.use_cuda_graph = use_cuda_graph
+        self.temperature = temperature
+        self.top_p = top_p
         if device is None:
             param = next(model.parameters())
             device = str(param.device)
@@ -146,8 +149,24 @@ class Engine:
                 self._sample(r, logits)
 
     def _sample(self, req, logits):
-        token = int(torch.argmax(logits))
         st = self._state[req.request_id]
+        if self.temperature <= 0:
+            token = int(torch.argmax(logits))
+        else:
+            # temperature scaling
+            scaled = logits / self.temperature
+            if self.top_p is not None and self.top_p < 1.0:
+                # top-p (nucleus) filtering
+                probs = torch.softmax(scaled, dim=-1)
+                sorted_probs, sorted_idx = torch.sort(probs, descending=True)
+                cumsum = torch.cumsum(sorted_probs, dim=-1)
+                mask = cumsum - sorted_probs > self.top_p
+                sorted_probs[mask] = 0.0
+                sorted_probs /= sorted_probs.sum()
+                idx = torch.multinomial(sorted_probs, 1).item()
+                token = int(sorted_idx[idx])
+            else:
+                token = int(torch.multinomial(torch.softmax(scaled, dim=-1), 1).item())
         st["generated"].append(token)
         req.num_generated += 1
 
