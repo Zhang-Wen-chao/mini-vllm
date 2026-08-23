@@ -92,7 +92,12 @@ class Engine:
     # -- internals ---------------------------------------------------------
 
     def _make_room_for_next_tokens(self):
-        """Preempt until every running request can get its next KV block."""
+        """Preempt until every running request can get its next KV block.
+
+        If the KV pool cannot free a block (total demand exceeds capacity),
+        stop preempting and leave the request to be retried next step —
+        otherwise preempt->reschedule->prefill spins forever.
+        """
         for req in list(self.scheduler.running):
             if req.status != "RUNNING":
                 continue
@@ -100,6 +105,7 @@ class Engine:
             if (st["prompt_ids"].shape[0] + req.num_generated) % \
                     self.scheduler.block_size != 0:
                 continue  # room left in the current block
+            attempts = 0
             while not self.kv.pool.free_blocks:
                 victim = self.scheduler.preempt()
                 if victim is None:
@@ -108,6 +114,12 @@ class Engine:
                 # recompute-based preemption: restart from the prompt
                 self._state[victim.request_id]["generated"] = []
                 victim.num_generated = 0
+                attempts += 1
+                if attempts >= len(self.scheduler.running) + 2:
+                    # could not free a block: give up this round instead of
+                    # spinning (the preempted request will be re-admitted
+                    # next schedule() call).
+                    break
 
     def _prefill_or_decode(self):
         running = [r for r in self.scheduler.running if r.status == "RUNNING"]
