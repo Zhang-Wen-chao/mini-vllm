@@ -144,8 +144,14 @@ class Engine:
         else:
             for r in decode:
                 st = self._state[r.request_id]
-                logits = self.model.decode(
-                    torch.tensor([st["generated"][-1]]), st["table"])
+                if hasattr(self.model, "decode_with_history"):
+                    history = torch.cat(
+                        [st["prompt_ids"], torch.tensor(st["generated"], device=st["prompt_ids"].device)]
+                    )
+                    logits = self.model.decode_with_history(history, st["table"])
+                else:
+                    logits = self.model.decode(
+                        torch.tensor([st["generated"][-1]]), st["table"])
                 self._sample(r, logits)
 
     def _sample(self, req, logits):
