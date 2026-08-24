@@ -26,14 +26,30 @@ import torch
 class TransformersAdapter:
     def __init__(self, model: Any):
         self.model = model
-        cfg = model.config
-        self.n_layers = getattr(cfg, "num_hidden_layers", None)
-        self.n_heads = getattr(cfg, "num_attention_heads", None)
-        self.n_kv_heads = getattr(cfg, "num_key_value_heads", None) or self.n_heads
-        self.head_dim = getattr(cfg, "head_dim", None) or (
-            getattr(cfg, "hidden_size", None) // self.n_heads
-        )
-        self.vocab_size = getattr(cfg, "vocab_size", None)
+        cfg = getattr(model, "config", None)
+        if cfg is not None:
+            self.n_layers = getattr(cfg, "num_hidden_layers", None)
+            self.n_heads = getattr(cfg, "num_attention_heads", None)
+            self.n_kv_heads = getattr(cfg, "num_key_value_heads", None) or self.n_heads
+            self.head_dim = getattr(cfg, "head_dim", None) or (
+                getattr(cfg, "hidden_size", None) // self.n_heads
+            )
+            self.vocab_size = getattr(cfg, "vocab_size", None)
+        else:
+            # mini-megatron GPT has no config; infer from structure.
+            decoder = getattr(model, "decoder", None)
+            layers = getattr(decoder, "layers", None) if decoder is not None else None
+            self.n_layers = len(layers) if layers else 2
+            first = layers[0] if layers else None
+            self.n_heads = getattr(first, "num_heads", None) or getattr(first, "n_heads", 4)
+            self.n_kv_heads = self.n_heads
+            self.head_dim = getattr(first, "head_dim", None)
+            if self.head_dim is None:
+                emb = getattr(model, "embedding", None)
+                hidden = getattr(emb, "d_model", None)
+                self.head_dim = (hidden or 32) // self.n_heads
+            emb = getattr(model, "embedding", None)
+            self.vocab_size = getattr(emb, "vocab_size", None) if emb is not None else None
         self.device = next(model.parameters()).device
         self.dtype = next(model.parameters()).dtype
         self._layer_kvs: list[Any] = [None] * self.n_layers
@@ -41,8 +57,13 @@ class TransformersAdapter:
         self._register_hooks()
 
     def _register_hooks(self) -> None:
-        for i, layer in enumerate(self.model.model.layers):
-            hook = layer.self_attn.register_forward_hook(
+        # transformers models expose self_attn per layer; mini-megatron's
+        # DecoderLayer uses its own attention module.
+        for i, layer in enumerate(self.model.model.layers if hasattr(self.model, "model") else self.model.decoder.layers):
+            attn = getattr(layer, "self_attn", None) or getattr(layer, "attn", None) or getattr(layer, "attention", None)
+            if attn is None:
+                continue
+            hook = attn.register_forward_hook(
                 lambda module, args, output, i=i: self._capture(i, output)
             )
             self._hooks.append(hook)
@@ -76,12 +97,20 @@ class TransformersAdapter:
     def _forward_logits(self, ids: torch.Tensor) -> torch.Tensor:
         self._layer_kvs = [None] * self.n_layers
         with torch.no_grad():
-            out = self.model(
-                input_ids=ids.unsqueeze(0),
-                attention_mask=torch.ones_like(ids).unsqueeze(0),
-                use_cache=False,
-            )
-        return out.logits[0]  # [T, V]
+            try:
+                out = self.model(
+                    input_ids=ids.unsqueeze(0),
+                    attention_mask=torch.ones_like(ids).unsqueeze(0),
+                    use_cache=False,
+                )
+            except TypeError:
+                # mini-megatron GPT.forward(input_ids, labels, loss_mask) has
+                # no attention_mask / use_cache kwargs.
+                out = self.model(input_ids=ids.unsqueeze(0))
+        if isinstance(out, tuple):
+            out = out[0]
+        logits = getattr(out, "logits", out)
+        return logits[0]  # [T, V]
 
     # -- mini-vllm engine interface --------------------------------------
 
