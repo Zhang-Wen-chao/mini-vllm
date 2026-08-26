@@ -22,6 +22,7 @@ mini-vllm/
 │   ├── scheduler.py         # Phase 3: WAITING/RUNNING 队列 + 抢占
 │   ├── engine.py            # Phase 4: 提交请求 → 调度 → prefill/decode → 采样
 │   └── model_runner.py      # Phase 4: 加载 HF 小模型, 前向 + 采样
+│   └── pd.py                # Phase 6: 逻辑 PD + 双进程 K/V handoff
 ├── tests/                   # CPU 单测, pytest
 │   ├── test_kv_cache.py
 │   ├── test_paged_attention.py
@@ -42,6 +43,14 @@ mini-vllm/
 - **引擎**：同步主循环 `step()`；prefill 阶段处理新请求，decode 阶段续生成。
 - **不做**：CUDA kernel、异步引擎、speculative decoding、多卡 TP、CPU swap、
   CUDA graph。
+- **PD 原型**：逻辑路径拆为 WAITING → PREFILL → HANDOFF → DECODE → FINISHED，
+  decode 优先；真实 worker 路径由两个独立进程、两个模型副本和两个 KV 块池构成。
+  handoff 传输 request 元数据与按逻辑块顺序排列的每层 K/V bytes，decode worker
+  在本地重新分配物理块后导入，绝不传 source block id。
+- **PD 边界**：当前是 CPU-staged bytes transfer 的 correctness harness；没有 CUDA
+  IPC/P2P/RDMA、网络服务、worker 内 dynamic batching、弹性扩缩容或 PD 路径抢占。
+  可显式指定 `cuda:0 -> cuda:1`：实际数据路径仍为 GPU -> CPU bytes -> GPU；跨 GPU
+  测试由 `RUN_CROSS_GPU_PD_TESTS=1` 显式开启，避免默认占用第二张卡。
 
 ## 分阶段验证
 
@@ -52,6 +61,7 @@ mini-vllm/
 | Phase 3 | 调度器（WAITING/RUNNING/抢占） | CPU 单测：增删/容量/抢占场景 | ✅ 完成 |
 | Phase 4 | 引擎 + 小模型端到端生成 | L20 上 gpt2/opt 跑通生成 | ✅ 完成 |
 | Phase 5 | README + GitHub 发布 | 仓库私有已建，HF GPT-2 适配器验证 | ✅ 完成（待公开发布） |
+| Phase 6 | PD 分离原型 | CPU：跨块/多层 KV 导入导出、逻辑队列、取消、独立双进程 bytes handoff 均逐 token 对齐；4090D 独立 NGC PyTorch 24.04 容器：GPU 0 同卡双进程 `test_pd.py` 9/9 通过 | ✅ 完成（正确性） |
 
 ## 实机验证结果（2026-08-14, L20）
 

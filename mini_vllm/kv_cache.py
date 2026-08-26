@@ -7,8 +7,39 @@ sequence finishes, which is how memory is shared and reused across requests.
 """
 
 from collections import deque
+from dataclasses import dataclass
 
 import torch
+
+
+@dataclass(frozen=True)
+class KVCacheTransfer:
+    """Portable snapshot of one sequence's paged KV cache.
+
+    Physical block ids deliberately do not cross a worker boundary: they are
+    local implementation details of the source pool.  cache is a
+    CPU-contiguous, block-major payload with layout
+    [K/V, layer, logical_block, token_in_block, head, head_dim].  Keeping
+    the payload on CPU makes the first PD implementation work between CPU
+    processes as well as between different CUDA devices; a production system
+    would replace this staged copy with CUDA IPC, P2P, or RDMA transport.
+    """
+
+    num_tokens: int
+    block_size: int
+    num_layers: int
+    num_heads: int
+    head_dim: int
+    dtype: torch.dtype
+    cache: torch.Tensor
+
+    @property
+    def num_blocks(self):
+        return self.cache.shape[2]
+
+    @property
+    def payload_bytes(self):
+        return self.cache.numel() * self.cache.element_size()
 
 
 class BlockPool:
@@ -115,6 +146,60 @@ class BlockTable:
         k = self.pool.gather(0, layer, self.blocks, self.num_tokens)
         v = self.pool.gather(1, layer, self.blocks, self.num_tokens)
         return k, v
+
+    def export_transfer(self):
+        """Copy this table into a worker-independent KV handoff payload.
+
+        The returned transfer has no source block-id values.  A decode worker
+        must allocate fresh local blocks and import it before reading K/V.  The
+        clone is intentional: a handoff remains valid after the prefill worker
+        releases its source table.
+        """
+        block_ids = torch.tensor(self.blocks, dtype=torch.long,
+                                 device=self.pool.cache.device)
+        if self.blocks:
+            cache = self.pool.cache.index_select(2, block_ids)
+        else:
+            cache = self.pool.cache[:, :, :0]
+        return KVCacheTransfer(
+            num_tokens=self.num_tokens,
+            block_size=self.block_size,
+            num_layers=self.pool.num_layers,
+            num_heads=self.pool.num_heads,
+            head_dim=self.pool.head_dim,
+            dtype=self.pool.cache.dtype,
+            cache=cache.detach().to("cpu").contiguous().clone(),
+        )
+
+    def import_transfer(self, transfer):
+        """Allocate local blocks and restore one KVCacheTransfer."""
+        if self.blocks or self.num_tokens:
+            raise RuntimeError("cannot import into a non-empty block table")
+        expected = (self.block_size, self.pool.num_layers,
+                    self.pool.num_heads, self.pool.head_dim)
+        actual = (transfer.block_size, transfer.num_layers,
+                  transfer.num_heads, transfer.head_dim)
+        if actual != expected:
+            raise ValueError("KV transfer shape is incompatible with destination pool")
+        expected_shape = (2, self.pool.num_layers, transfer.num_blocks,
+                          self.block_size, self.pool.num_heads,
+                          self.pool.head_dim)
+        if tuple(transfer.cache.shape) != expected_shape:
+            raise ValueError("KV transfer payload has an invalid shape")
+        if transfer.num_tokens < 0 or transfer.num_tokens > transfer.num_blocks * self.block_size:
+            raise ValueError("KV transfer has an invalid token count")
+        if transfer.dtype != self.pool.cache.dtype:
+            raise ValueError("KV transfer dtype is incompatible with destination pool")
+        if len(self.pool.free_blocks) < transfer.num_blocks:
+            raise RuntimeError("destination KV pool lacks blocks for transfer")
+        for _ in range(transfer.num_blocks):
+            self.blocks.append(self.pool.allocate())
+        if self.blocks:
+            target = torch.tensor(self.blocks, dtype=torch.long,
+                                  device=self.pool.cache.device)
+            self.pool.cache.index_copy_(2, target, transfer.cache.to(
+                device=self.pool.cache.device, dtype=self.pool.cache.dtype))
+        self.num_tokens = transfer.num_tokens
 
     def release(self):
         """Return all owned blocks to the pool and reset."""

@@ -1,6 +1,6 @@
 # mini-vllm
 
-vLLM 核心思想的纯 PyTorch 教学实现：**分块 KV cache + PagedAttention + Continuous Batching**。
+vLLM 核心思想的纯 PyTorch 教学实现：**分块 KV cache + PagedAttention + Continuous Batching + PD 分离原型**。
 
 > **这是一个教学项目，不是生产级推理框架**。它用 ~700 行纯 PyTorch 复现
 > vLLM 的核心机制，用于理解 KV cache 分页、连续批处理和 CUDA graph 加速；
@@ -27,6 +27,7 @@ mini_vllm/
 ├── paged_attention.py   # 逐块读取 K/V + online softmax 累积 (FlashAttention 式)
 ├── scheduler.py         # WAITING/RUNNING 队列、预算检查、重算式抢占
 ├── engine.py            # 同步主循环: 调度 → prefill/decode → 采样 → 回收 KV
+├── pd.py                # 逻辑 PD 队列 + 双进程 K/V handoff 协议
 └── model_runner.py      # 微型 Transformer: 流式 prefill/decode + 稠密参考实现
 ```
 
@@ -57,11 +58,49 @@ KV，而不是一整段连续 buffer：
 decode（老请求各一个 token）→ 完成回收。贪心采样、确定性输出，因此可以与
 "每步全量重算"的稠密参考做逐 token 等价验证。
 
+### 5. Prefill–Decode 分离（PD）
+
+mini_vllm/pd.py 在原来的混合 Engine 之外提供两层 PD 教学实现：
+
+    逻辑 PD（单进程）：
+    WAITING -> PREFILL queue -> HANDOFF -> DECODE queue -> FINISHED
+
+    真实 worker 边界（双进程）：
+    PrefillWorker 的 BlockPool
+      -> 导出 logical block 顺序的 K/V payload + request metadata
+      -> CPU-staged handoff
+      -> DecodeWorker 在自己的 BlockPool 重新分配 block、导入 K/V 后继续 decode
+
+物理 block_id 从不跨 worker 传递：它只在所属 KV pool 内有效。handoff 带有
+request_id、已生成首 token、max_new_tokens、token 数、block shape，以及每层
+实际 K/V block 数据；源 worker 可在导出后立即释放自己的块，decode worker 则在
+独立池中重建 block table。
+
+CPU 双进程和单进程逻辑路径都以“与稠密参考逐 token 一致、handoff 后源/目的 KV 块都
+正确归还”为验收。2026-08-26 又在 4090D 的独立 NGC PyTorch 24.04 容器中以 GPU 0
+完成同卡双进程 smoke：`tests/test_pd.py` 9/9 通过，端到端示例也通过；容器退出后 GPU
+显存回到 4 MiB。可运行：
+
+    python examples/run_pd.py
+    python examples/run_pd.py --prefill-device cuda:0 --decode-device cuda:1
+    RUN_CROSS_GPU_PD_TESTS=1 pytest -q tests/test_pd.py -k cross_gpu
+
+当前 transport 是为正确性设计的 CPU staged copy，**不是** CUDA IPC、P2P、RDMA、
+网络服务或性能优化实现。上述容器 smoke 只验证独立进程/独立 KV pool 的语义，不能得出
+跨卡传输或 PD 吞吐性能结论。
+第二条命令会执行 GPU 0 -> CPU bytes -> GPU 1 的跨 GPU 正确性路径；测试默认显式跳过，
+只有两张卡均已预约且设置 `RUN_CROSS_GPU_PD_TESTS=1` 才会占用 GPU 1。
+
+逻辑 PD 的准入策略是 **decode 优先**：KV reservation 不足时，新 prefill 请求留在
+WAITING，绝不为它抢占已运行的 decode 请求。原混合 Engine 的重算式抢占尚未迁移到
+PD 路径；双 worker 目前也是按请求顺序的正确性 harness，没有 worker 内 dynamic
+batching、弹性扩缩容或负载均衡。
+
 ## 快速开始
 
 ```bash
 pip install torch pytest
-pytest                 # 30 个 CPU 单测, 全绿
+pytest                 # 44 个 CPU 单测, 全绿
 ```
 
 端到端示例：
@@ -142,6 +181,7 @@ Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致�
 - 无异步引擎、无 speculative decoding、无多卡 TP
 - 无 CPU swap（抢占 = 丢弃 KV 重算）
 - 贪心采样（无 top-k/top-p 采样器）
+- PD transport 仅 CPU staged copy；无 CUDA IPC/P2P、RDMA、跨机或服务化部署
 
 ## 进度
 
@@ -150,6 +190,7 @@ Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致�
 - [x] Phase 3: Continuous batching 调度器 + 单测
 - [x] Phase 4: 引擎 + 端到端等价验证（含抢占）
 - [ ] Phase 5: HF 小模型 demo（L20 验证）
+- [x] Phase 6: PD 原型（逻辑队列 + 双进程 KV handoff；CPU + 同卡 GPU 正确性）
 
 ## 可复现信息
 
