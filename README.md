@@ -135,6 +135,17 @@ fp16、V1 引擎（满血）、双方 warmup 后计时、空闲 GPU、TTFT/TPOT 
 GQA + 分页 KV，复用 HF 的 rotary 保证数值一致；合并 qkv/gateup 投影（注意
 Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致。
 
+**Qwen3.5**（`mini_vllm/transformers_adapter.py`、`examples/hf_qwen35.py`）：
+Qwen3.5 的 24 个 Gated DeltaNet 线性注意力层和 8 个 full-attention 层通过
+Transformers 原生 `DynamicCache` 增量执行，cache 同时保存 GDN recurrent state
+和 full-attention KV。该路径目前是正确性优先的单请求/逐请求 native-cache 路径，
+尚未把混合 state 分页化，也未接入 PD handoff。Qwen3.5 checkpoint 的 `mtp.*`
+权重会被 HF 模型类忽略；显式传入 `--speculative-tokens N` 时，mini-vllm 会单独
+加载这些权重，执行 MTP draft + target verification，并在拒绝时完整恢复 hybrid cache。
+运行该路径需要支持 Qwen3.5 的 Transformers 最新版本（当前测试为 5.16.1）；
+示例默认使用公开的 `Qwen/Qwen3.5-4B`，这是当前本地官方 checkpoint 中最小的
+Qwen3.5 档位，Qwen3-0.6B 不是 Qwen3.5。
+
 **踩过的坑**（全部已解决并记录）：
 1. `0.0 × -inf = NaN`——静态因果 mask 不能乘出来，必须 `torch.where`
 2. HF `apply_rotary_pos_emb` 要 `(B, H, S, D)` 布局且 q/k 一起转
@@ -178,7 +189,7 @@ Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致�
 ## 设计边界（不做）
 
 - 不写 CUDA kernel / Triton
-- 无异步引擎、无 speculative decoding、无多卡 TP
+- 无异步引擎、无多卡 TP
 - 无 CPU swap（抢占 = 丢弃 KV 重算）
 - 贪心采样（无 top-k/top-p 采样器）
 - PD transport 仅 CPU staged copy；无 CUDA IPC/P2P、RDMA、跨机或服务化部署

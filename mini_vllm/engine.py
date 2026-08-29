@@ -23,11 +23,14 @@ class Engine:
     def __init__(self, model, block_size=16, num_blocks=64,
                  max_prefill_tokens=256, max_running_tokens=512,
                  device=None, dtype=None, use_cuda_graph=False,
-                 temperature=0.0, top_p=1.0):
+                 temperature=0.0, top_p=1.0, speculative_tokens=0):
         self.model = model
         self.use_cuda_graph = use_cuda_graph
         self.temperature = temperature
         self.top_p = top_p
+        self.speculative_tokens = int(speculative_tokens)
+        if self.speculative_tokens < 0:
+            raise ValueError("speculative_tokens must be non-negative")
         if device is None:
             param = next(model.parameters())
             device = str(param.device)
@@ -46,6 +49,14 @@ class Engine:
         self._graphs = {}      # (batch_key) -> {bucket_blocks: buf}
         self._graph_buckets = None
         self._graph_key = None  # request ids captured in the graphs
+
+    @property
+    def _speculative_enabled(self):
+        return (
+            self.speculative_tokens > 0
+            and getattr(self.model, "supports_mtp", False)
+            and hasattr(self.model, "speculative_decode")
+        )
 
     # -- public API -------------------------------------------------------
 
@@ -110,7 +121,9 @@ class Engine:
                 victim = self.scheduler.preempt()
                 if victim is None:
                     break
-                self.kv.release_table(self._state[victim.request_id]["table"])
+                table = self._state[victim.request_id]["table"]
+                self._reset_model_cache(table)
+                self.kv.release_table(table)
                 # recompute-based preemption: restart from the prompt
                 self._state[victim.request_id]["generated"] = []
                 victim.num_generated = 0
@@ -142,7 +155,17 @@ class Engine:
             for r in new:
                 st = self._state[r.request_id]
                 logits = self.model.prefill(st["prompt_ids"], st["table"])
-                self._sample(r, logits)
+                if self._speculative_enabled:
+                    tokens = self.model.speculative_decode(
+                        st["prompt_ids"], st["table"],
+                        min(self.speculative_tokens, r.max_new_tokens),
+                    )
+                    if tokens:
+                        self._append_tokens(r, tokens)
+                    else:
+                        self._sample(r, logits)
+                else:
+                    self._sample(r, logits)
         if batchable and decode:
             if self.use_cuda_graph and \
                     hasattr(self.model, "capture_decode_graph"):
@@ -160,6 +183,19 @@ class Engine:
                     history = torch.cat(
                         [st["prompt_ids"], torch.tensor(st["generated"], device=st["prompt_ids"].device)]
                     )
+                    if self._speculative_enabled:
+                        tokens = self.model.speculative_decode(
+                            history, st["table"],
+                            min(self.speculative_tokens,
+                                r.max_new_tokens - r.num_generated),
+                        )
+                        if tokens:
+                            self._append_tokens(r, tokens)
+                        else:
+                            self._sample(r, self.model.decode_with_history(
+                                history, st["table"]
+                            ))
+                        continue
                     logits = self.model.decode_with_history(history, st["table"])
                 else:
                     logits = self.model.decode(
@@ -187,6 +223,13 @@ class Engine:
                 token = int(torch.multinomial(torch.softmax(scaled, dim=-1), 1).item())
         st["generated"].append(token)
         req.num_generated += 1
+
+    def _append_tokens(self, req, tokens):
+        st = self._state[req.request_id]
+        remaining = req.max_new_tokens - req.num_generated
+        tokens = list(tokens[:remaining])
+        st["generated"].extend(int(token) for token in tokens)
+        req.num_generated += len(tokens)
 
     def _prefill_with_graph(self, new):
         """CUDA-graph prefill: bucket by prompt length, replay, sample."""
@@ -217,7 +260,9 @@ class Engine:
             victim = self.scheduler.preempt()
             if victim is None:
                 break
-            self.kv.release_table(self._state[victim.request_id]["table"])
+            table = self._state[victim.request_id]["table"]
+            self._reset_model_cache(table)
+            self.kv.release_table(table)
             self._state[victim.request_id]["generated"] = []
             victim.num_generated = 0
         logits = self.model.replay_prefill_graph(bucket, tables, prompts)
@@ -280,6 +325,14 @@ class Engine:
         for req in list(self.scheduler.running):
             if req.num_generated >= req.max_new_tokens:
                 self.scheduler.finish(req)
-                self.kv.release_table(self._state[req.request_id]["table"])
+                table = self._state[req.request_id]["table"]
+                self._reset_model_cache(table)
+                self.kv.release_table(table)
                 finished.append(req)
         return finished
+
+    def _reset_model_cache(self, table):
+        """Let model adapters release non-paged state (e.g. Qwen3.5 GDN)."""
+        reset = getattr(self.model, "reset_cache", None)
+        if reset is not None:
+            reset(table)

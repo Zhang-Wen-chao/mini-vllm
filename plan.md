@@ -41,8 +41,12 @@ mini-vllm/
   容量不足时**抢占最晚加入的 RUNNING 请求**回 WAITING（丢弃其 KV，重算式抢占，
   不做 CPU swap）。
 - **引擎**：同步主循环 `step()`；prefill 阶段处理新请求，decode 阶段续生成。
-- **不做**：CUDA kernel、异步引擎、speculative decoding、多卡 TP、CPU swap、
+- **不做**：CUDA kernel、异步引擎、多卡 TP、CPU swap、
   CUDA graph。
+- **Qwen3.5 边界**：HF 原生 `DynamicCache` 已覆盖 GDN recurrent state +
+  full-attention KV 的增量正确性路径；混合 state 尚未分页化或接入 PD。MTP
+  通过独立 predictor、target verification 和 hybrid-cache 快照回滚实现，需显式
+  开启且当前只支持 `mtp_num_hidden_layers=1`。
 - **PD 原型**：逻辑路径拆为 WAITING → PREFILL → HANDOFF → DECODE → FINISHED，
   decode 优先；真实 worker 路径由两个独立进程、两个模型副本和两个 KV 块池构成。
   handoff 传输 request 元数据与按逻辑块顺序排列的每层 K/V bytes，decode worker
