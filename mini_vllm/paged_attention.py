@@ -47,8 +47,8 @@ def paged_attention(query, table, layer=0, causal=True, scale=None,
         block_id = table.blocks[block_pos // pool.block_size]
         block_hi = min(block_pos + pool.block_size, total_tokens)
         num_keys = block_hi - block_pos
-        k = pool.cache[0, layer, block_id][:num_keys]  # (S, H, D)
-        v = pool.cache[1, layer, block_id][:num_keys]
+        k = pool.gather_block(0, layer, block_id, num_keys)  # (S, H, D)
+        v = pool.gather_block(1, layer, block_id, num_keys)
         # GQA: repeat K/V heads to match the query heads
         if k.shape[1] != num_heads:
             repeat = num_heads // k.shape[1]

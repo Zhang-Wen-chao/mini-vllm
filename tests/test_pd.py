@@ -9,6 +9,7 @@ from mini_vllm.model_runner import TinyTransformer
 from mini_vllm.pd import (
     DecodeWorker,
     LogicalPDEngine,
+    PDOutOfBlocks,
     PDRequestSpec,
     PrefillWorker,
     _handoff_from_wire,
@@ -272,3 +273,45 @@ def test_two_process_cross_gpu_cpu_staged_pd_matches_monolithic_engine():
         assert result.transport == "cpu_staged"
         assert result.prefill_device == "cuda:0"
         assert result.decode_device == "cuda:1"
+
+
+# -- Phase 20: decode-worker admission control (PD-path preemption) -----------
+
+def test_decode_worker_admission_rejects_handoff_that_cannot_fit():
+    """Recompute preemption at the PD boundary: a decode pool that cannot
+    hold the FULL remaining generation rejects the handoff up front —
+    before any block is allocated or K/V imported — instead of dying
+    mid-decode. The handoff stays intact and retries elsewhere."""
+    model = make_model()
+    prefill = PrefillWorker(model, block_size=2, num_blocks=64)
+    prompt = torch.tensor([2, 8, 1, 3, 5])
+    handoff = prefill.prefill(PDRequestSpec(41, prompt, 8))
+    # 5 prompt tokens + 7 still to generate = ceil(12 / 2) = 6 blocks needed
+    tiny = DecodeWorker(model, block_size=2, num_blocks=3)
+    with pytest.raises(PDOutOfBlocks) as excinfo:
+        tiny.decode(handoff)
+    assert excinfo.value.needed == 6 and excinfo.value.available == 3
+    assert excinfo.value.generated == handoff.generated, \
+        "nothing beyond the prefill token was consumed"
+    assert len(tiny.kv.pool.free_blocks) == 3, \
+        "the rejected handoff must not leak decode blocks"
+    # the same handoff succeeds on a worker that fits
+    big = DecodeWorker(model, block_size=2, num_blocks=64)
+    result = big.decode(handoff)
+    assert list(result.generated) == greedy_reference(model, prompt, 8)
+
+
+def test_two_process_pd_surfaces_typed_preemption():
+    """The decode process converts PDOutOfBlocks into a typed PREEMPTED
+    result; the router surfaces it as an explicit error instead of a
+    worker crash."""
+    model = make_model()
+    specs = [PDRequestSpec(42, torch.tensor([2, 8, 1, 3, 5]), 8)]
+    with pytest.raises(RuntimeError, match="preempted request 42"):
+        run_two_process_pd(
+            model,
+            specs,
+            block_size=2,
+            num_blocks=3,
+            timeout_seconds=60,
+        )

@@ -40,8 +40,17 @@ class _Layer(nn.Module):
         t = x.shape[0]
         return x.view(t, self.n_heads, self.head_dim)
 
+    def mlp(self, x):
+        """The position-wise FFN; MoE layers override this."""
+        return self.w2(F.gelu(self.w1(self.ln2(x))))
+
 
 class TinyTransformer(nn.Module):
+    # Engine capability flags (checked by Engine.__init__, like supports_mtp):
+    # prefill/decode derive positions from the block-table cursor, so a
+    # prefill can resume mid-sequence on top of a cache-matched prefix.
+    supports_prefix_cache = True
+
     def __init__(self, vocab_size=64, d_model=32, n_layers=2, n_heads=4,
                  max_positions=512):
         super().__init__()
@@ -60,14 +69,20 @@ class TinyTransformer(nn.Module):
     # -- streaming (paged) inference --------------------------------------
 
     def prefill(self, input_ids, table):
-        """Process a full prompt, store its K/V, return logits per position."""
+        """Process a prompt suffix, store its K/V, return logits per position.
+
+        Positions start at the table's cursor, so callers can prefill onto a
+        prefix that is already in the KV cache (prefix-cache hit) by passing
+        only the unmatched suffix tokens.
+        """
         input_ids = input_ids.to(self.embed.weight.device)
         t = input_ids.shape[0]
+        start = table.num_tokens
         x = self.embed(input_ids) + self.pos(
-            torch.arange(t, device=input_ids.device))
+            torch.arange(start, start + t, device=input_ids.device))
         for l, layer in enumerate(self.layers):
             x = self._attn_layer(x, layer, table, l)
-            x = x + layer.w2(F.gelu(layer.w1(layer.ln2(x))))
+            x = x + layer.mlp(x)
         table.advance(t)
         return self.lm_head(self.ln_f(x))
 
@@ -79,7 +94,7 @@ class TinyTransformer(nn.Module):
             torch.tensor([pos], device=token_id.device))
         for l, layer in enumerate(self.layers):
             x = self._attn_layer(x, layer, table, l)
-            x = x + layer.w2(F.gelu(layer.w1(layer.ln2(x))))
+            x = x + layer.mlp(x)
         table.advance(1)
         return self.lm_head(self.ln_f(x))
 
@@ -95,26 +110,35 @@ class TinyTransformer(nn.Module):
     # -- batched (padded) inference ---------------------------------------
 
     def prefill_batch(self, input_ids_list, tables):
-        """Prefill a batch of prompts in one forward (padded to max length).
+        """Prefill a batch of prompt suffixes in one forward (padded).
+
+        Each row starts at its table's cursor: rows with a cache-matched
+        prefix attend to the stored prefix K/V and only compute their
+        suffix tokens at the right absolute positions.
 
         Args:
-            input_ids_list: list of (T_i,) tensors.
-            tables: matching list of BlockTable.
+            input_ids_list: list of (T_i,) suffix-token tensors.
+            tables: matching list of BlockTable (cursors hold the matched
+                prefix lengths).
 
         Returns:
             list of (V,) logits for the last token of each prompt.
         """
         b = len(input_ids_list)
         lens = [x.shape[0] for x in input_ids_list]
+        starts = [t.num_tokens for t in tables]
+        kv_lens = [starts[i] + lens[i] for i in range(b)]
         max_len = max(lens)
         device = self.embed.weight.device
         padded = torch.zeros(b, max_len, dtype=torch.long, device=device)
         for i, x in enumerate(input_ids_list):
             padded[i, :lens[i]] = x.to(device)
-        x = self.embed(padded) + self.pos(
-            torch.arange(max_len, device=device))
-        x = self._run_layers_batch(x, tables, max_len, lens,
-                                   query_starts=[0] * b)
+        # per-row absolute positions, (B, max_len)
+        pos = torch.arange(max_len, device=device)[None, :] + \
+            torch.tensor(starts, device=device)[:, None]
+        x = self.embed(padded) + self.pos(pos)
+        x = self._run_layers_batch(x, tables, max_len, kv_lens,
+                                   query_starts=starts)
         for i, table in enumerate(tables):
             table.advance(lens[i])
         logits = self.lm_head(self.ln_f(x))  # (B, T, V)
@@ -155,11 +179,8 @@ class TinyTransformer(nn.Module):
             for i in range(b):
                 bt[i, :len(tables[i].blocks)] = torch.tensor(
                     tables[i].blocks, device=device)
-            flat = bt.flatten()
-            kk = pool.cache[0, l].index_select(0, flat)
-            vv = pool.cache[1, l].index_select(0, flat)
-            kk = kk.view(b, nb * pool.block_size, k.shape[-2], k.shape[-1])[:, :maxkv]
-            vv = vv.view(b, nb * pool.block_size, v.shape[-2], v.shape[-1])[:, :maxkv]
+            kk = pool.gather_batch(0, l, bt, maxkv)
+            vv = pool.gather_batch(1, l, bt, maxkv)
             # mask: hide (a) keys beyond a row's real length, (b) future keys
             s_idx = torch.arange(maxkv, device=device)
             q_idx = torch.arange(t, device=device)
@@ -172,7 +193,7 @@ class TinyTransformer(nn.Module):
             o = batched_attention(q, kk, vv, mask)
             o = o.reshape(b, t, self.d_model)
             x = x + layer.wo(o)
-            x = x + layer.w2(F.gelu(layer.w1(layer.ln2(x))))
+            x = x + layer.mlp(x)
         return x
 
     # -- dense ground truth ------------------------------------------------
@@ -197,6 +218,6 @@ class TinyTransformer(nn.Module):
             q = layer.split_heads(layer.wq(ln))
             o = dense_attention(q, k, v, causal=True)
             x = x + layer.wo(o.reshape(b, t, self.d_model))
-            x = x + layer.w2(F.gelu(layer.w1(layer.ln2(x))))
+            x = x + layer.mlp(x)
         logits = self.lm_head(self.ln_f(x))
         return logits if batched else logits.squeeze(0)

@@ -105,6 +105,24 @@ def _model_cache_shape(model):
     )
 
 
+class PDOutOfBlocks(RuntimeError):
+    """A decode worker cannot fit a handoff's full remaining generation.
+
+    Raised BEFORE any block is allocated or any K/V imported, so the
+    handoff stays intact and can be retried (on a larger decode pool, or
+    after other requests release theirs) — recompute-style preemption at
+    the PD boundary, never a mid-generation crash. ``generated`` carries
+    the confirmed prefix (usually just the prefill token).
+    """
+
+    def __init__(self, needed, available, generated=()):
+        super().__init__(
+            f"decode worker needs {needed} KV blocks, has {available} free")
+        self.needed = needed
+        self.available = available
+        self.generated = tuple(generated)
+
+
 def _infer_device_and_dtype(model, device=None, dtype=None):
     parameter = next(model.parameters())
     return (
@@ -412,9 +430,23 @@ class DecodeWorker:
         )
 
     def decode(self, handoff):
-        """Import the handoff, finish greedy decode, then release local blocks."""
+        """Import the handoff, finish greedy decode, then release local blocks.
+
+        Admission control mirrors LogicalPDEngine's reservation rule: the
+        worker commits to a handoff only if the FULL remaining generation
+        fits (transferred tokens + blocks still to allocate), so a request
+        that would die mid-decode is rejected up front as
+        ``PDOutOfBlocks`` — the handoff is untouched and the router may
+        retry it elsewhere (recompute preemption, vLLM v1 semantics).
+        """
         if not handoff.generated:
             raise ValueError("handoff must include the prefill token")
+        bs = self.kv.pool.block_size
+        remaining = handoff.max_new_tokens - len(handoff.generated)
+        needed = (handoff.transfer.num_tokens + remaining + bs - 1) // bs
+        free = len(self.kv.pool.free_blocks)
+        if needed > free:
+            raise PDOutOfBlocks(needed, free, handoff.generated)
         table = self.kv.create_table()
         started = perf_counter()
         try:
@@ -464,7 +496,13 @@ def _decode_process(model, worker_kwargs, handoff_queue, result_queue, device):
             if isinstance(handoff, tuple) and handoff[:1] == ("ERROR",):
                 result_queue.put(handoff)
                 return
-            result_queue.put(worker.decode(_handoff_from_wire(handoff)))
+            try:
+                result_queue.put(worker.decode(_handoff_from_wire(handoff)))
+            except PDOutOfBlocks as oom:
+                # typed preemption, not a worker crash: the router learns
+                # the request did not fit and may retry it
+                result_queue.put(("PREEMPTED", handoff.request_id,
+                                  oom.needed, oom.available))
     except BaseException as exc:
         result_queue.put(("ERROR", repr(exc)))
 
@@ -516,6 +554,12 @@ def run_two_process_pd(
                 raise RuntimeError("PD workers did not return before timeout") from exc
             if isinstance(result, tuple) and result[:1] == ("ERROR",):
                 raise RuntimeError(f"PD worker failed: {result[1]}")
+            if isinstance(result, tuple) and result[:1] == ("PREEMPTED",):
+                _, request_id, needed, available = result
+                raise RuntimeError(
+                    f"decode worker preempted request {request_id}: needs "
+                    f"{needed} KV blocks, has {available} free — retry with "
+                    "a larger decode pool")
             results.append(result)
     finally:
         prefill.join(timeout=timeout_seconds)
