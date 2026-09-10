@@ -3,14 +3,15 @@
 Kernel-level attribution for the bench_fair numbers: where does the wall
 time go — CUDA kernels, or host scheduling/launch overhead around them?
 
-Usage (nsys wraps the whole process; NVTX ranges mark the steady decode):
+Usage (nsys wraps the whole process; NVTX ranges mark the steady decode;
+run with the venv's python that has vllm installed):
 
     nsys profile -t cuda,nvtx --cuda-graph-trace=node \
         -o experiments/nsys_mini_gpt2 \
-        /root/vllm-env/bin/python experiments/profile_decode.py --engine mini
+        python experiments/profile_decode.py --engine mini
     VLLM_ENABLE_V1_MULTIPROCESSING=0 nsys profile -t cuda,nvtx \
         --cuda-graph-trace=node -o experiments/nsys_vllm_gpt2 \
-        /root/vllm-env/bin/python experiments/profile_decode.py --engine vllm
+        python experiments/profile_decode.py --engine vllm
 
 Two pitfalls baked into those flags:
 - ``--cuda-graph-trace=node``: nsys does not trace kernels inside CUDA graph
