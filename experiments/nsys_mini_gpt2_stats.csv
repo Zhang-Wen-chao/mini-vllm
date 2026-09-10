@@ -1,0 +1,40 @@
+Generating SQLite file experiments/nsys_mini_gpt2.sqlite from experiments/nsys_mini_gpt2.nsys-rep
+Processing [experiments/nsys_mini_gpt2.sqlite] with [/usr/local/cuda-13.1/NsightSystems-cli-2025.6.1/target-linux-x64/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+49.8,31759732,3200,9924.9,9728.0,9440,11680,532.5,"void at::native::reduce_kernel<(int)512, (int)1, at::native::ReduceOp<c10::Half, at::native::ArgMaxOps<float>, unsigned int, long, (int)4, (int)4>>(T3)"
+4.7,2972851,1230,2417.0,2240.0,1888,4608,502.8,"void at::native::elementwise_kernel<(int)128, (int)4, void at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::Half>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)"
+4.5,2870444,432,6644.5,6928.0,5088,11936,1299.2,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_128x2_nn_align8>(T1::Params)
+4.5,2869994,216,13287.0,13376.0,7616,19680,4429.1,void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_relu_f16_64x64_32x6_nn_align8>(T1::Params)
+4.3,2725394,288,9463.2,8560.0,5856,16960,4112.1,"fmha_cutlassF_f16_aligned_64x64_rf_sm80(PyTorchMemEffAttention::AttentionKernel<cutlass::half_t, cutlass::arch::Sm80, (bool)1, (int)64, (int)64, (int)64, (bool)1, (bool)1>::Params)"
+3.5,2216268,216,10260.5,10128.0,9248,13440,653.6,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_16x16_128x2_nn_align8>(T1::Params)
+3.3,2099817,576,3645.5,3584.0,2976,5088,600.5,"void at::native::index_elementwise_kernel<(int)128, (int)4, void at::native::gpu_index_kernel<void at::native::index_put_kernel_impl<at::native::OpaqueType<(int)2>>(at::TensorIterator &, c10::ArrayRef<long>, c10::ArrayRef<long>)::[lambda(char *, const char *, long) (instance 1)]>(at::TensorIteratorBase &, c10::ArrayRef<long>, c10::ArrayRef<long>, const T1 &, bool)::[lambda(int) (instance 1)]>(long, T3)"
+3.3,2081707,18,115650.4,114496.5,113376,119553,2232.3,void cutlass::Kernel2<cutlass_75_wmma_tensorop_f16_s161616gemm_f16_16x16_128x1_tn_align1>(T1::Params)
+3.1,1983528,216,9183.0,8992.0,8672,12192,642.8,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_16x16_64x2_nn_align8>(T1::Params)
+2.8,1799975,1180,1525.4,928.0,896,367682,14539.4,"void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<c10::Half>, std::array<char *, (unsigned long)1>>(int, T2, T3)"
+2.6,1666023,600,2776.7,2688.0,2592,3392,188.4,"void at::native::<unnamed>::vectorized_layer_norm_kernel<c10::Half, float, (bool)0>(int, T2, const T1 *, const T1 *, const T1 *, T2 *, T2 *, T1 *)"
+2.4,1535081,6,255846.8,255777.5,254818,256737,679.1,void cutlass::Kernel2<cutlass_75_tensorop_f16_s1688gemm_f16_128x128_tn_align1>(T1::Params)
+2.2,1403686,1600,877.3,864.0,864,928,16.3,"void at::native::unrolled_elementwise_kernel<at::native::FillFunctor<c10::Half>, std::array<char *, (unsigned long)1>, (int)4, TrivialOffsetCalculator<(int)0, unsigned int>, TrivialOffsetCalculator<(int)1, unsigned int>, at::native::memory::LoadWithoutCast, at::native::memory::StoreWithoutCast>(int, T1, T2, T4, T5, T6, T7)"
+1.8,1171941,588,1993.1,1792.0,1408,3424,460.4,"void at::native::vectorized_gather_kernel<(int)16, long>(char *, char *, T2 *, int, long, long, long, long, bool)"
+1.8,1143395,72,15880.5,15712.0,15360,19328,767.2,ampere_fp16_s1688gemm_fp16_128x128_ldg8_f2f_stages_32x1_nn
+1.2,736515,800,920.6,928.0,896,960,17.2,"void at::native::vectorized_elementwise_kernel<(int)2, at::native::FillFunctor<c10::Half>, std::array<char *, (unsigned long)1>>(int, T2, T3)"
+1.1,695971,594,1171.7,1120.0,1056,1440,124.6,"void at::native::vectorized_elementwise_kernel<(int)4, at::native::CUDAFunctor_add<c10::Half>, std::array<char *, (unsigned long)3>>(int, T2, T3)"
+0.8,508356,288,1765.1,1376.0,1344,3008,679.4,"void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, __half, __half, float, __half, (bool)0, __half, __half, __half, (bool)1, (bool)0, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)"
+0.7,459587,288,1595.8,1312.0,1280,2528,498.5,"void at::native::vectorized_elementwise_kernel<(int)4, at::native::GeluCUDAKernelImpl(at::TensorIteratorBase &, at::native::GeluType)::[lambda() (instance 2)]::operator ()() const::[lambda() (instance 3)]::operator ()() const::[lambda(c10::Half) (instance 1)], std::array<char *, (unsigned long)2>>(int, T2, T3)"
+0.7,440547,256,1720.9,1728.0,1696,1984,34.6,"void at::native::elementwise_kernel<(int)128, (int)4, void at::native::gpu_kernel_impl_nocast<at::native::FillFunctor<c10::Half>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)"
+0.6,409889,450,910.9,896.0,864,1184,35.5,"void at::native::vectorized_elementwise_kernel<(int)2, at::native::FillFunctor<long>, std::array<char *, (unsigned long)1>>(int, T2, T3)"
+0.2,121826,36,3384.1,3392.0,3232,3777,119.4,"void at::native::<unnamed>::indexSelectSmallIndex<c10::Half, long, unsigned int, (int)2, (int)2, (int)-2>(at::cuda::detail::TensorInfo<T1, T3>, at::cuda::detail::TensorInfo<const T1, T3>, at::cuda::detail::TensorInfo<const T2, T3>, int, int, T3, long)"
+0.1,44032,16,2752.0,2816.0,1888,3488,557.9,"void at::native::elementwise_kernel<(int)128, (int)4, void at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase &)::[lambda() (instance 3)]::operator ()() const::[lambda() (instance 10)]::operator ()() const::[lambda(c10::Half) (instance 1)]>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)"
+0.1,41088,32,1284.0,1280.0,1248,1536,50.6,"void at::native::vectorized_elementwise_kernel<(int)2, at::native::BUnaryFunctor<long, long, long, at::native::remainder_kernel_cuda(at::TensorIteratorBase &)::[lambda() (instance 1)]::operator ()() const::[lambda() (instance 4)]::operator ()() const::[lambda(long, long) (instance 1)]>, std::array<char *, (unsigned long)2>>(int, T2, T3)"
+0.1,40704,42,969.1,896.0,864,1408,155.4,"void <unnamed>::elementwise_kernel_with_index<int, at::native::arange_cuda_out(const c10::Scalar &, const c10::Scalar &, const c10::Scalar &, at::Tensor &)::[lambda() (instance 1)]::operator ()() const::[lambda() (instance 4)]::operator ()() const::[lambda(long) (instance 1)]>(T1, T2, function_traits<T2>::result_type *)"
+0.0,5024,2,2512.0,2512.0,2464,2560,67.9,"void at::native::elementwise_kernel<(int)128, (int)4, void at::native::gpu_kernel_impl_nocast<at::native::<unnamed>::where_kernel_impl(at::TensorIterator &)::[lambda() (instance 1)]::operator ()() const::[lambda() (instance 2)]::operator ()() const::[lambda(bool, unsigned short, unsigned short) (instance 1)]>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)"
+0.0,4192,2,2096.0,2096.0,2048,2144,67.9,"void at::native::elementwise_kernel<(int)128, (int)4, void at::native::gpu_kernel_impl_nocast<at::native::<unnamed>::CompareFunctor<long>>(at::TensorIteratorBase &, const T1 &)::[lambda(int) (instance 1)]>(int, T3)"
+
+Processing [experiments/nsys_mini_gpt2.sqlite] with [/usr/local/cuda-13.1/NsightSystems-cli-2025.6.1/target-linux-x64/reports/cuda_api_sum.py]... 
+Time (%),Total Time (ns),Num Calls,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+51.9,423235558,8206,51576.4,3994.0,2673,1311605,196586.8,cudaStreamSynchronize
+16.4,134099995,29,4624137.8,3097410.0,195953,30279214,5893327.2,cuLibraryLoadData
+13.8,112291004,13278,8456.9,3621.0,963,20778760,216409.7,cudaLaunchKernel
+9.3,75812927,13078,5797.0,3280.0,2616,8668119,79910.9,cudaMemcpyAsync
+1.7,13855987,400,34640.0,31886.5,30239,196300,15129.2,cudaGraphLaunch_v10000
+1.3,10289645,26,395755.6,153293.0,25956,1085833,392776.6,cudaFree
+1.0,7949155,58,137054.4,130781.0,3510,350161,40839.1,cudaMalloc

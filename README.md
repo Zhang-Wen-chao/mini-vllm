@@ -209,6 +209,12 @@ mini 墙钟 1.51 ms、kernel 合计 1.03 ms、host 缺口 0.45 ms、约 252 个 
 `experiments/profile_decode.py`（nsys 外壳需 `--cuda-graph-trace=node`，
 vLLM 需 `VLLM_ENABLE_V1_MULTIPROCESSING=0`，坑见脚本 docstring）。
 
+证据链全部入仓（双方同一 venv 同一 torch）：`experiments/env_vllm_2026-09-10.txt`
+（环境锁档，含 pip freeze）、`nsys_*_gpt2_stats.csv`（kernel/API 统计导出）、
+`nvtx_window_*_2026-09-10.txt`（NVTX 窗口切片）与 6 份运行日志；
+二进制轨迹（.nsys-rep/.sqlite/chrome trace 共 ~44MB）留测量机，
+`profile_decode.py` 可一键重采集。
+
 **Qwen/Llama 适配器**（`examples/hf_llama.py`）：RMSNorm + RoPE + SwiGLU +
 GQA + 分页 KV，复用 HF 的 rotary 保证数值一致；合并 qkv/gateup 投影（注意
 Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致。

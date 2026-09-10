@@ -1,0 +1,30 @@
+Generating SQLite file experiments/nsys_vllm_gpt2.sqlite from experiments/nsys_vllm_gpt2.nsys-rep
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+31.2,115402888,1260,91589.6,90209.0,6592,190721,56762.7,"void flash::flash_fwd_splitkv_kernel<Flash_fwd_kernel_traits<(int)64, (int)64, (int)256, (int)4, (bool)0, (bool)0, cutlass::half_t, Flash_kernel_traits<(int)64, (int)64, (int)256, (int)4, cutlass::half_t>>, (bool)0, (bool)0, (bool)0, (bool)0, (bool)1, (bool)0, (bool)0, (bool)0>(flash::Flash_fwd_params)"
+22.0,81397140,432,188419.3,204241.0,8160,207937,53249.3,"void flash::flash_fwd_splitkv_kernel<Flash_fwd_kernel_traits<(int)64, (int)64, (int)256, (int)4, (bool)0, (bool)0, cutlass::half_t, Flash_kernel_traits<(int)64, (int)64, (int)256, (int)4, cutlass::half_t>>, (bool)1, (bool)0, (bool)0, (bool)0, (bool)1, (bool)0, (bool)0, (bool)0>(flash::Flash_fwd_params)"
+16.1,59492250,24,2478843.8,2481069.0,2419437,2483918,12712.1,"void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<signed char>, std::array<char *, (unsigned long)1>>(int, T2, T3)"
+6.3,23406042,393,59557.4,109025.0,4512,114433,51077.0,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_16x16_128x2_tn_align8>(T1::Params)
+2.9,10792797,444,24308.1,19073.0,18272,93697,12276.0,void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_relu_f16_64x64_32x6_tn_align8>(T1::Params)
+2.4,8787534,72,122049.1,25424.5,24993,356002,139508.8,ampere_fp16_s1688gemm_fp16_256x64_ldg8_relu_f2f_stages_32x1_tn
+2.2,8168877,1008,8104.0,6752.0,4896,23008,4538.5,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_128x2_tn_align8>(T1::Params)
+1.8,6796005,720,9438.9,9568.0,7680,11712,942.4,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_64x2_tn_align8>(T1::Params)
+1.5,5633942,336,16767.7,14144.0,13440,21728,3399.4,ampere_fp16_s16816gemm_fp16_128x64_ldg8_relu_f2f_stages_32x6_tn
+1.2,4498551,12,374879.3,374818.0,374050,375681,591.9,ampere_fp16_s1688gemm_fp16_128x64_sliced1x2_ldg8_relu_f2f_tn
+1.2,4454813,312,14278.2,12576.0,11296,19648,3019.6,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_32x32_64x1_tn_align8>(T1::Params)
+1.2,4344543,192,22627.8,22640.0,21601,24320,832.9,void cutlass::Kernel2<cutlass_80_tensorop_f16_s16816gemm_relu_f16_64x128_32x6_tn_align8>(T1::Params)
+0.9,3431897,1044,3287.3,2240.5,1152,113120,9363.6,triton_poi_fused_add_mul_pow_tanh_1
+0.9,3368969,240,14037.4,14048.0,13664,14592,202.5,ampere_fp16_s16816gemm_fp16_128x64_ldg8_relu_f2f_stages_64x3_tn
+0.8,2951951,1044,2827.5,2080.0,1504,69184,7014.3,triton_per_fused_add_native_layer_norm_2
+0.6,2288170,96,23835.1,23840.0,23456,24320,203.2,ampere_fp16_s16816gemm_fp16_64x64_sliced1x2_ldg8_relu_f2f_stages_64x5_tn
+0.6,2109006,1692,1246.5,1152.0,960,3712,313.9,"void vllm::reshape_and_cache_flash_kernel<unsigned short, unsigned short, (vllm::Fp8KVCacheDataType)0>(const T1 *, const T1 *, T2 *, T2 *, const long *, long, long, long, long, long, int, int, int, const float *, const float *, int)"
+0.5,2024141,1044,1938.8,1856.0,1472,10944,980.7,triton_per_fused_add_native_layer_norm_0
+0.5,1695591,216,7850.0,7616.0,5696,9024,941.5,void cutlass::Kernel2<cutlass_80_wmma_tensorop_f16_s161616gemm_f16_16x16_128x1_tn_align8>(T1::Params)
+0.4,1490537,168,8872.2,8928.0,8225,9632,224.1,ampere_fp16_s16816gemm_fp16_64x64_ldg8_relu_f2f_stages_64x5_tn
+0.3,1280195,96,13335.4,13312.0,13184,13728,91.4,ampere_fp16_s16816gemm_fp16_64x64_ldg8_f2f_stages_64x5_tn
+0.3,1074852,1160,926.6,896.0,864,18656,524.4,"void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<int>, std::array<char *, (unsigned long)1>>(int, T2, T3)"
+0.3,1017511,205,4963.5,4576.0,4416,46240,2983.7,_gumbel_sample_kernel
+0.2,801766,432,1855.9,1920.0,1472,2144,181.8,"void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, __half, __half, float, __half, (bool)0, __half, __half, __half, (bool)1, (bool)1, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)"
+0.2,793027,53,14962.8,6144.0,3296,111777,29414.5,"std::enable_if<!T7, void>::type internal::gemvx::kernel<int, int, __half, __half, __half, float, (bool)0, (bool)1, (bool)1, (bool)0, (int)7, (bool)0, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<const __half>, cublasGemvTensorStridedBatched<__half>, float>>(T13)"
+0.2,736483,205,3592.6,3616.0,2848,3808,111.2,"void at::native::reduce_kernel<(int)512, (int)1, at::native::ReduceOp<float, at::native::ArgMaxOps<float>, unsigned int, long, (int)4, (int)4>>(T3)"
+0.2,707426,208,3401.1,3360.0,2688,5824,254.4,_gather_block_tables_kernel
+0.2,676837,208,3254.0,3296.0,2528,4032,168.4,_post_update_kernel
