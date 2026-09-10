@@ -203,12 +203,20 @@ mini 墙钟 1.51 ms、kernel 合计 1.03 ms、host 缺口 0.45 ms、约 252 个 
 每步 1 次整图回放、20 次 `cudaStreamSynchronize`；vLLM 墙钟 1.42 ms、
 kernel 0.76 ms、host 缺口 0.62 ms、约 139 个 kernel、1 次事件同步。
 **mini 快在 host 路径（图回放把 launch 抹掉，TTFT 0.27x 即此），慢在 kernel
-效率**：纯 PyTorch 未融合算子，kernel 数 1.8 倍、时长多 35%。采样是其中一处：
-mini 逐请求 8 次 `torch.argmax`（Half kernel，均次 9.9 µs）加 8 次 GPU→CPU
-同步；vLLM 0.28 用一个 Triton `_gumbel_sample_kernel` 整批完成（Gumbel-max
-统一贪心与随机采样，temp=0 时不加噪声即纯 argmax），双方采样 GPU 时间
-79.5 对 8.6 µs/步（占 kernel 时间 7.7% 对 1.1%；该路径不启用 FlashInfer，
-启动日志里 "Using FlashInfer" 只是可用性提示）。gpt2 上 host 优势与 kernel
+效率**：纯 PyTorch 未融合算子，kernel 数 1.8 倍、时长多 35%。按类型拆开 99 步
+窗口：**矩阵乘 50.2 对 48.6 ms 打平**（双方都调 cuBLAS/cutlass 现成 kernel）、
+注意力 8.9 对 17.8 ms 反而更快（16 token 短序列上 cutlass fmha 比 flash
+splitkv 轻），**全部 27 ms 差距在周边小算子**（残差加法、layernorm、gather、
+fill、采样）：43.1 ms/17678 次对 8.9 ms/5312 次——官方用融合 Triton kernel
+合并干（如 `triton_per_fused_add_native_layer_norm`），mini 每个小操作单独
+一个 kernel。采样是其中一处：mini 逐请求 8 次 `torch.argmax`（Half kernel，
+均次 9.9 µs）加 8 次 GPU→CPU 同步；vLLM 0.28 用一个 Triton
+`_gumbel_sample_kernel` 整批完成（Gumbel-max 统一贪心与随机采样，temp=0 时
+不加噪声即纯 argmax），双方采样 GPU 时间 79.5 对 8.6 µs/步（占 kernel 时间
+7.7% 对 1.1%；该路径不启用 FlashInfer，启动日志里 "Using FlashInfer" 只是
+可用性提示）。注意 CUDA Graph 不减少 kernel 数——它合并的是发射不是计算，
+252 个 kernel 录进图里回放还是 252 个；kernel 层的账另算（即本段）。
+gpt2 上 host 优势与 kernel
 劣势恰好抵消 → 0.98x；7B 上双方 kernel 占比 98.5% / 99.5%，都钉在计算墙，
 host 优势归零，0.86x 全是 kernel 效率差距。剖析脚本：
 `experiments/profile_decode.py`（nsys 外壳需 `--cuda-graph-trace=node`，

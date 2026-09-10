@@ -25,6 +25,16 @@ import json
 import sqlite3
 
 
+def _category(name):
+    """Coarse kernel classification for the GEMM/attention/small-op split."""
+    n = name.lower()
+    if "gemm" in n or "splitkreduce" in n or ("cutlass" in n and "wmma" in n):
+        return "gemm"
+    if "fmha" in n or "flash" in n:  # attention + paged KV append
+        return "attention"
+    return "other"  # residual add / layernorm / gather / fill / argmax / ...
+
+
 def analyze(path, steps):
     con = sqlite3.connect(path)
     cur = con.cursor()
@@ -63,6 +73,12 @@ def analyze(path, steps):
         "GROUP BY s.value",
         (ws, we),
     ).fetchall()
+    all_rows = cur.execute(
+        "SELECT s.value, COUNT(*), SUM(k.\"end\" - k.start) "
+        "FROM CUPTI_ACTIVITY_KIND_KERNEL k JOIN StringIds s ON k.demangledName = s.id "
+        "WHERE k.start >= ? AND k.\"end\" <= ? GROUP BY s.value",
+        (ws, we),
+    ).fetchall()
     con.close()
 
     def kern_row(r):
@@ -73,6 +89,11 @@ def analyze(path, steps):
         }
 
     sampler_us = sum(r[2] for r in sampler) / 1e6 / steps * 1000
+    cats = {}
+    for name, c, t in all_rows:
+        cat = _category(name)
+        ms, cnt = cats.get(cat, (0.0, 0))
+        cats[cat] = (ms + t / 1e6, cnt + c)
     return {
         "file": path.split("/")[-1],
         "window_ms": round((we - ws) / 1e6, 1),
@@ -82,6 +103,11 @@ def analyze(path, steps):
         "kernel_ms": round((ksum or 0) / 1e6, 2),
         "kernel_us_per_step": round((ksum or 0) / 1e6 / steps * 1000, 0),
         "kernel_share_of_wall": round(100.0 * (ksum or 0) / (we - ws), 1),
+        "categories": {
+            k: {"total_ms": round(v[0], 2), "count": v[1],
+                "us_per_step": round(v[0] / steps * 1000, 0)}
+            for k, v in sorted(cats.items(), key=lambda kv: -kv[1][0])
+        },
         "sampler_kernels_us_per_step": round(sampler_us, 1),
         "sampler_share_of_kernel": round(100.0 * sampler_us / ((ksum or 0) / 1e6 / steps * 1000), 1),
         "sync_per_step": {a: round(c / steps, 1) for a, c in syncs},
