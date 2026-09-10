@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+# profiler artifacts stay on the measurement host, not in git
+*.nsys-rep
+*.sqlite
+*.qdstrm
+profile_*_decode.json
+profile_vllm_generate.json

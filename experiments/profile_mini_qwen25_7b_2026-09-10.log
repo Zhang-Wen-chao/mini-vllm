@@ -1,0 +1,6 @@
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+USDT:2026-09-10 08:49:36 48852:48852 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-10 08:49:39 48852:48852 SyncActivityProfilerHandler.cpp:59] profiler_stop
+[mini] unprofiled: 99 decode steps, wall 24.74 ms/step
+[mini] profiled: 99 steps, kernel-sum 24.37 ms/step (gap wall-kernel = host overhead)
+SUMMARY {"engine": "mini", "wall_ms_per_step": 24.744710536918255}

@@ -102,7 +102,9 @@ def mini_metrics(model, tok, prompts, max_new):
 
 def vllm_metrics(tok, prompts, max_new, model_name="gpt2"):
     from vllm import LLM, SamplingParams
-    llm = LLM(model=model_name, dtype="float16", max_model_len=2048,
+    # max_model_len left to vLLM's config-derived default: 0.28 validates
+    # it against max_position_embeddings (gpt2: 1024) and rejects 2048.
+    llm = LLM(model=model_name, dtype="float16",
               gpu_memory_utilization=0.9)
     llm.generate([prompts[0]], SamplingParams(temperature=0.0, max_tokens=4))
     sp1 = SamplingParams(temperature=0.0, max_tokens=1)

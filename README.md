@@ -178,6 +178,37 @@ fp16、V1 引擎（满血）、双方 warmup 后计时、空闲 GPU、TTFT/TPOT 
 注：以上数字对应 2026-08 的代码状态（当时尚无前缀缓存/TP/PP 等功能）。Phase 7–20
 新增机制的收益复测已在 L20 完成，见下文"Phase 7–20 收益复测"。
 
+### 复测（2026-09-10，vLLM 0.28.0，同机同卡同口径）
+
+原始日志未留存是上一轮的缺口；本轮补齐（`experiments/bench_fair_2026-09-10_*.log`
++ nsys/kineto 归因日志），口径与 2026-08-15 完全一致（fp16、b=8、贪心、双方 warmup）：
+
+| 模型 | 指标 | mini-vllm | vLLM 0.28.0 | 比值 |
+|---|---|---:|---:|---:|
+| gpt2 (124M) | 吞吐 | 5358 tok/s | 5443 tok/s | **0.98x（打平）** |
+| gpt2 | TTFT / TPOT | 1 ms / 0.2 ms | 4 ms / 0.2 ms | **0.27x / 1.05x** |
+| Qwen2.5-7B | 吞吐 | 327 tok/s | 380 tok/s | **0.86x** |
+| Qwen2.5-7B | TTFT / TPOT | 25 ms / 3.1 ms | 23 ms / 2.6 ms | 1.09x / 1.18x |
+
+两个事实，一喜一忧：
+
+- **mini 的数字两个月纹丝不动**（gpt2 5342–5377 → 5358；7B 332 → 327）——
+  同机同卡可复现，测量方法稳定。
+- **vLLM 0.28 把小模型 decode 的 host 路径修好了**（gpt2 1744–3826 → 5443；
+  7B 333 → 380）。上表的 1.40–3.07x / 1.00x 是对 0.8.5 的历史事实，对 0.28
+  已不成立；引用请锁版本。
+
+**归因（gpt2 decode 每 step，nsys + torch.profiler 双工具交叉验证）**：
+mini 墙钟 1.51 ms、kernel 合计 1.03 ms、host 缺口 0.45 ms、约 252 个 kernel、
+每步 1 次整图回放；vLLM 墙钟 1.42 ms、kernel 0.76 ms、host 缺口 0.62 ms、
+约 139 个 kernel。**mini 快在 host 路径（图回放把 launch 抹掉，TTFT 0.27x 即此），
+慢在 kernel 效率**（纯 PyTorch 未融合算子：kernel 数 1.8 倍、时长多 35%，
+其中采样 argmax 一项占 mini kernel 时间 49.8%）。gpt2 上两者恰好抵消 → 0.98x；
+7B 上双方 kernel 占比 98.5% / 99.5%，都钉在计算墙，host 优势归零，
+0.86x 全是 kernel 效率差距。剖析脚本：
+`experiments/profile_decode.py`（nsys 外壳需 `--cuda-graph-trace=node`，
+vLLM 需 `VLLM_ENABLE_V1_MULTIPROCESSING=0`，坑见脚本 docstring）。
+
 **Qwen/Llama 适配器**（`examples/hf_llama.py`）：RMSNorm + RoPE + SwiGLU +
 GQA + 分页 KV，复用 HF 的 rotary 保证数值一致；合并 qkv/gateup 投影（注意
 Qwen2 的 attention_bias 必须带上）。0.5B 上 3/3 逐 token 与 HF 一致。
