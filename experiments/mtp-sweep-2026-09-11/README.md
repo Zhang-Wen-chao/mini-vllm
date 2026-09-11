@@ -1045,7 +1045,7 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
 | `int4_calib.py` | GPTQ W4A16 混合精度标定（ignore 名单 + 防呆断言 + docstring 写选型理由） |
 | `mtp_bench5.sh` | W4 臂 bench（int4 checkpoint + fp8 KV + MTP k=2） |
 | `chain_int4.sh` | 串联编排：C4 完成 → 等两卡空闲 → 标定 → W4 bench |
-| `ceval_w4.sh` | W4 C-Eval 补跑包装（起 int4 服务 + lc-env 跑 200 题；坑 10/11 的现场） |
+| `ceval_w4.sh` | W4 C-Eval 补跑包装（起 int4 服务 + `<lc-venv>` 跑 200 题；坑 10/11 的现场） |
 | `mtp_greedy.py` | 贪心等价探针（8 题固定 prompt） |
 | `greedy_diff2.py` / `greedy_diff3.py` | 逐 token 对照（含 within-arm 对照优先的设计） |
 | `greedy_diff4.py` | A(sweep1) vs W4 对照（含首翻位置报告） |

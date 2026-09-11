@@ -1,5 +1,5 @@
 #!/bin/bash
-# W4 C-Eval re-run: the bench5 ceval step failed (datasets not in vllm-env).
+# W4 C-Eval re-run: the bench5 ceval step failed (datasets not in <venv>).
 # Starts the int4 server on GPU3 and runs the 200-question C-Eval harness
 # from the lc venv (which has `datasets`). Same protocol as the fp8 round:
 # tag w4, /v1/completions + logprobs argmax + allowed_token_ids.
