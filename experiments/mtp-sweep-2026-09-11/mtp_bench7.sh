@@ -870,6 +870,85 @@ log "R2cZ phase done"
 gpu_snap
 fi
 
+# ---------- P21: Z2 — the crossover's missing rung (@132t), both ladders WARM ----------
+# Two holes, one phase.
+# (1) R2bZ and R2cZ sample 108/120/144 but NEVER 132 — yet that is exactly where
+#     k=0's own maximum turned out to sit (703.26, +2.97% over the recorded peak).
+#     So the k=0/k=1 crossover could only be localized to the unsampled (60,72]
+#     lane band. This phase measures the missing rung on both sides.
+# (2) The night's other finding: the FIRST measured point after a boot is ~1.5%
+#     slow and the rest plateau. The cold ladders are therefore not comparable
+#     position-for-position (R2bZ's @120t was its 2nd point, a re-run's would be
+#     its 4th). Here BOTH ladders discard one warm-up point first and then take
+#     the four rungs at identical positions, so any remaining k=0/k=1 difference
+#     is the thing under test rather than a position artefact.
+# Bonus: the discarded warm-up is the same shape and pool as @120t (conc 60,
+# 120 prompts, seed 0), so w0 -> c120t is a controlled pos1-vs-pos3 measurement
+# of the ramp itself, on both arms.
+if want Z2; then
+  for spec in 0 1; do
+    if [ "$spec" = "1" ]; then sp="--speculative-config '$SPEC1'"; pfx=R2cZw
+    else sp=""; pfx=R2bZw; fi
+    boot_replica 8341 $RPA $OUT/server_${pfx}_1.log "$sp"; Z21=$LAST_PID
+    boot_replica 8342 $RPB $OUT/server_${pfx}_2.log "$sp"; Z22=$LAST_PID
+    if wait_up 8341 && wait_up 8342; then
+      log "$pfx pair up ($Z21/$Z22)"
+      startup_lines $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      FORCE_SEED=0 bench_pair ${pfx}_w0 60 120 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      for c in 108 120 132 144; do
+        FORCE_SEED=0 bench_pair ${pfx}_c${c}t $((c/2)) $c 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      done
+      spec_metrics ${pfx}_c132t 8341 8342
+    else
+      log "ABORT $pfx boot failed"
+    fi
+    kill_srv $Z21; kill_srv $Z22
+    gpu_snap
+  done
+  log "Z2 phase done"
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import os, re, sys
+out = sys.argv[1]
+def g(f, key):
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
+    return float(m.group(1)) if m else float("nan")
+def total(tag):
+    return sum(g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput") for i in (1, 2))
+_miss = [t for t in [f"{p}_{x}" for p in ("R2bZw", "R2cZw")
+                     for x in ("w0", "c108t", "c120t", "c132t", "c144t")]
+         if total(t) != total(t)]
+print("== Z2 warm ladders, ONE pool (seed 0), ONE boot each, SAME positions ==")
+print(f"  completeness: {'ALL TEN PRESENT' if not _miss else 'INCOMPLETE -> ' + ', '.join(_miss)}")
+print("  both ladders discard one warm-up point first, so position i means the same")
+print("  thing on both sides -- which the cold R2bZ/R2cZ ladders did NOT.")
+for pfx, name in (("R2bZw", "k=0"), ("R2cZw", "k=1")):
+    vals = [(c, total(f"{pfx}_c{c}t")) for c in (108, 120, 132, 144)]
+    ok = [(c, v) for c, v in vals if v == v]
+    pc = max(ok, key=lambda kv: kv[1])[0] if ok else None
+    for c, v in vals:
+        mark = "   <- peak" if c == pc else ("   <- MISSING" if v != v else "")
+        print(f"   {name} @{c}t ({c//2} lanes/rep): {v:.2f}{mark}")
+    w0, c120 = total(f"{pfx}_w0"), total(f"{pfx}_c120t")
+    if w0 == w0 and c120 == c120:
+        print(f"   {name} ramp w0->c120t (same shape+pool, pos1->pos3): "
+              f"{w0:.2f} -> {c120:.2f} = {(c120-w0)/w0*100:+.2f}%")
+print("== crossover, point-for-point, both ladders warm ==")
+for c in (108, 120, 132, 144):
+    k0, k1 = total(f"R2bZw_c{c}t"), total(f"R2cZw_c{c}t")
+    if k0 != k0 or k1 != k1:
+        print(f"   @{c}t ({c//2} lanes/rep): k=0 {k0}  k=1 {k1}  -> n/a (incomplete)")
+    else:
+        print(f"   @{c}t ({c//2} lanes/rep): k=0 {k0:.2f}  k=1 {k1:.2f}  -> "
+              f"{(k1-k0)/k0*100:+.2f}%  ({'k=0' if k0 > k1 else 'k=1'} wins)")
+print("   NOTE: @132t is the rung that did not exist before this phase. The")
+print("   crossover is now bracketed by MEASURED points, not by an unsampled band.")
+print("   Do NOT report it as a single lane count: the peak of each arm sits at a")
+print("   different abscissa, and these four rungs only bracket where it crosses.")
+EOF
+fi
+
 # ---------- P20: FV — the whole four-factor chain on ONE seed ----------
 # The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
 # fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to
