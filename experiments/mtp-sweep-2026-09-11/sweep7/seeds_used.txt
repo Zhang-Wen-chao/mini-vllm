@@ -1,0 +1,10 @@
+R2cZ_c48t_a_p1 0 R2cZ_c48t_a
+R2cZ_c48t_a_p2 0 R2cZ_c48t_a
+R2cZ_c48t_b_p1 0 R2cZ_c48t_b
+R2cZ_c48t_b_p2 0 R2cZ_c48t_b
+R2cZ_c48t_c_p1 0 R2cZ_c48t_c
+R2cZ_c48t_c_p2 0 R2cZ_c48t_c
+R2cZ_c120t_p1 0 R2cZ_c120t
+R2cZ_c120t_p2 0 R2cZ_c120t
+R2cZ_c144t_p1 0 R2cZ_c144t
+R2cZ_c144t_p2 0 R2cZ_c144t

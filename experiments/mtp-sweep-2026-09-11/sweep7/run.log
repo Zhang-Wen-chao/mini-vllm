@@ -54,3 +54,74 @@
 15:58:31 ALL_DONE
 16:08:44 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2cABr R2bZ R2cZ FV
 16:08:44 WAIT_GPU 1: 1:17014MiB (poll 1)
+16:14:45 GPUS_FREE 1 after 12 polls
+16:18:47 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2bZ R2cZ FV
+16:18:47 WAIT_GPU 1: 1:17014MiB (poll 1)
+16:20:32 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2bZ R2cZ FV
+16:20:32 GPUS_IDLE 2 — holding 10 polls before boot
+16:20:32 WAIT_GPU 2:idle-holding (poll 1)
+16:21:02 GPUS_FREE_ABORTED 2: 2:33398MiB after 1 free polls — neighbour returned
+16:21:32 GPUS_IDLE 2 — holding 10 polls before boot
+16:22:02 GPUS_FREE_ABORTED 2: 2:43836MiB after 1 free polls — neighbour returned
+16:22:32 GPUS_IDLE 2 — holding 10 polls before boot
+16:24:02 GPUS_FREE_ABORTED 2: 2:33398MiB after 3 free polls — neighbour returned
+16:30:33 WAIT_GPU 2: 2:33400MiB (poll 21)
+16:31:33 GPUS_IDLE 2 — holding 10 polls before boot
+16:36:03 GPUS_FREE 2 after 31 polls (held 10)
+16:36:03 GPUS_IDLE 3 — holding 10 polls before boot
+16:36:03 WAIT_GPU 3:idle-holding (poll 1)
+16:38:04 GPUS_FREE_ABORTED 3: 3:4986MiB after 4 free polls — neighbour returned
+16:38:34 GPUS_IDLE 3 — holding 10 polls before boot
+16:39:30 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2bZ R2cZ FV
+16:39:30 WAIT_GPU 1: 1:37492MiB (poll 1)
+16:43:31 GPUS_IDLE 1 — holding 10 polls before boot
+16:48:01 GPUS_FREE 1 after 17 polls (held 10)
+16:48:01 GPUS_IDLE 3 — holding 10 polls before boot
+16:48:01 WAIT_GPU 3:idle-holding (poll 1)
+16:52:31 GPUS_FREE 3 after 9 polls (held 10)
+16:54:11 R2bZ pair up (171659/171913)
+17:01:37 R2bZ phase done
+17:01:38 GPUS_IDLE 1 — holding 10 polls before boot
+17:01:38 WAIT_GPU 1:idle-holding (poll 1)
+17:06:08 GPUS_FREE 1 after 9 polls (held 10)
+17:06:08 GPUS_IDLE 3 — holding 10 polls before boot
+17:06:08 WAIT_GPU 3:idle-holding (poll 1)
+17:10:38 GPUS_FREE 3 after 9 polls (held 10)
+17:12:18 R2cZ pair up (176257/176535)
+17:19:08 R2cZ phase done
+17:19:08 WAIT_GPU 2,3: 2:43008MiB (poll 1)
+17:22:38 GPUS_IDLE 2,3 — holding 10 polls before boot
+17:27:09 GPUS_FREE 2,3 after 16 polls (held 10)
+17:28:59 FV0 up (pid 182050)
+17:30:24 FV0 phase done
+17:30:24 GPUS_IDLE 2,3 — holding 10 polls before boot
+17:30:24 WAIT_GPU 2,3:idle-holding (poll 1)
+17:34:55 GPUS_FREE 2,3 after 9 polls (held 10)
+17:36:55 FV1 up (pid 184525)
+17:38:05 FV1 phase done
+17:38:05 GPUS_IDLE 2,3 — holding 10 polls before boot
+17:38:05 WAIT_GPU 2,3:idle-holding (poll 1)
+17:42:36 GPUS_FREE 2,3 after 9 polls (held 10)
+17:44:26 FV2 up (pid 187018)
+17:45:33 FV2 phase done
+17:45:34 ALL_DONE
+17:45:34 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2cABr
+17:45:34 GPUS_IDLE 1 — holding 10 polls before boot
+17:45:34 WAIT_GPU 1:idle-holding (poll 1)
+17:50:04 GPUS_FREE 1 after 9 polls (held 10)
+17:50:04 GPUS_IDLE 3 — holding 10 polls before boot
+17:50:04 WAIT_GPU 3:idle-holding (poll 1)
+17:54:35 GPUS_FREE 3 after 9 polls (held 10)
+17:56:15 R2cABr pair up (189551/190698)
+17:58:56 R2cABr phase done
+17:58:56 ALL_DONE
+18:06:12 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2cZ
+18:06:13 GPUS_IDLE 1 — holding 10 polls before boot
+18:06:13 WAIT_GPU 1:idle-holding (poll 1)
+18:10:43 GPUS_FREE 1 after 9 polls (held 10)
+18:10:43 GPUS_IDLE 3 — holding 10 polls before boot
+18:10:43 WAIT_GPU 3:idle-holding (poll 1)
+18:15:13 GPUS_FREE 3 after 9 polls (held 10)
+18:16:43 R2cZ pair up (194324/195472)
+18:23:05 R2cZ phase done
+18:23:06 ALL_DONE

@@ -3,3 +3,95 @@
 1, 17014 MiB
 2, 17014 MiB
 3, 17014 MiB
+16:14:45 FREE 1 waited 360s
+16:18:47 busy 1: 1:17014MiB held=0
+0, 43808 MiB
+1, 17014 MiB
+2, 295 MiB
+3, 295 MiB
+16:20:32 busy 2:none held=1
+0, 43808 MiB
+1, 17014 MiB
+2, 295 MiB
+3, 295 MiB
+16:21:02 aborted-hold 2: 2:33398MiB after 1x30s
+16:22:02 aborted-hold 2: 2:43836MiB after 1x30s
+16:24:02 aborted-hold 2: 2:33398MiB after 3x30s
+16:30:33 busy 2: 2:33400MiB held=0
+0, 43808 MiB
+1, 17014 MiB
+2, 33400 MiB
+3, 33400 MiB
+16:36:03 FREE 2 waited 930s held 10x30s
+16:36:03 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+16:38:04 aborted-hold 3: 3:4986MiB after 4x30s
+16:39:30 busy 1: 1:37492MiB held=0
+0, 43808 MiB
+1, 37492 MiB
+2, 41116 MiB
+3, 295 MiB
+16:48:01 FREE 1 waited 510s held 10x30s
+16:48:01 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 41116 MiB
+3, 295 MiB
+16:52:31 FREE 3 waited 270s held 10x30s
+17:01:38 busy 1:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 43008 MiB
+3, 295 MiB
+17:06:08 FREE 1 waited 270s held 10x30s
+17:06:08 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 43008 MiB
+3, 295 MiB
+17:10:38 FREE 3 waited 270s held 10x30s
+17:19:08 busy 2,3: 2:43008MiB held=0
+0, 43808 MiB
+1, 295 MiB
+2, 43008 MiB
+3, 295 MiB
+17:27:09 FREE 2,3 waited 480s held 10x30s
+17:30:24 busy 2,3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+17:34:55 FREE 2,3 waited 270s held 10x30s
+17:38:05 busy 2,3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+17:42:36 FREE 2,3 waited 270s held 10x30s
+17:45:34 busy 1:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+17:50:04 FREE 1 waited 270s held 10x30s
+17:50:04 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+17:54:35 FREE 3 waited 270s held 10x30s
+18:06:13 busy 1:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+18:10:43 FREE 1 waited 270s held 10x30s
+18:10:43 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+18:15:13 FREE 3 waited 270s held 10x30s
