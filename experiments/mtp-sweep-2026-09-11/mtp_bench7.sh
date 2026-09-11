@@ -684,6 +684,37 @@ if wait_up 8341 && wait_up 8342; then
     FORCE_SEED=0 bench_pair R2bZ_c${c}t $((c/2)) $c 8341 2 $OUT/server_R2bZ_1.log $OUT/server_R2bZ_2.log
   done
   spec_metrics R2bZ_c144t 8341 8342
+  # Print the ladder so the peak bracketing exists as text next to the raw logs
+  # (same reason as R2cZ's block: the number should not have to be recomputed by
+  # hand later, and a printed line is greppable while a hand-computed one is not).
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import os, re, sys
+out = sys.argv[1]
+def total(tag):
+    s = 0.0
+    for i in (1, 2):
+        f = f"{out}/bench_{tag}_p{i}.log"
+        if not os.path.exists(f):
+            return float("nan")   # partial ladder -> nan, never a silent half-sum
+        m = re.search(re.escape("Output token throughput") + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
+        s += float(m.group(1)) if m else float("nan")
+    return s
+print("== R2bZ k=0 ladder, ONE pool (seed 0), ONE boot ==")
+lad = [(c, total(f"R2bZ_c{c}t")) for c in (108, 120, 132, 144)]
+ok = [(c, v) for c, v in lad if v == v]          # drop nan before max(): nan
+peak_c, peak_v = max(ok, key=lambda kv: kv[1]) if ok else (None, float("nan"))
+for c, v in lad:
+    tag = ""
+    if c == peak_c:
+        tag = "   <- peak"
+    elif v != v:
+        tag = "   <- MISSING"
+    print(f"   @{c}t ({c//2} lanes/rep): {v:.2f}" + tag)
+print(f"   peak = @{peak_c}t {peak_v:.2f}; vs recorded R2b_c120t 682.96 = {(peak_v-682.96)/682.96*100:+.2f}%")
+print( "   NOTE: every point below is the SAME pool (seed 0) on ONE boot, so the")
+print( "   SHAPE of this ladder is comparable to itself; the recorded 96t/120t/144t")
+print( "   ladder used seeds 706-711 across three boots and is not.")
+EOF
 else
   log "ABORT R2bZ boot failed"
 fi
@@ -714,22 +745,31 @@ if wait_up 8341 && wait_up 8342; then
   # Report the k=1 noise floor and the same-pool crossover here, so the numbers
   # exist as text next to the raw logs rather than being recomputed by hand later.
   $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
-import re, sys, statistics as st
+import os, re, sys, statistics as st
 out = sys.argv[1]
 def g(f, key):
-    txt = open(f).read()
-    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
     return float(m.group(1)) if m else float("nan")
 def total(tag):
     return sum(g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput") for i in (1, 2))
+# The noise floor prints FIRST and the crossover is guarded: if R2bZ was skipped
+# (deadline, failed boot) its files are absent, and an unguarded open() would
+# kill the block AFTER the noise floor was printed but BEFORE anything else --
+# losing the crossover silently in the summary. Missing files now read as nan.
 rep = [total(f"R2cZ_c48t_{r}") for r in "abc"]
 print("== R2cZ k=1 @48t noise floor (3 back-to-back, one boot, seed 0) ==")
 print("   " + "  ".join(f"{v:.2f}" for v in rep))
-print(f"   mean={st.mean(rep):.2f} sd={st.pstdev(rep):.2f} spread={(max(rep)-min(rep))/st.mean(rep)*100:.2f}%")
+if all(v == v for v in rep):
+    print(f"   mean={st.mean(rep):.2f} sd={st.pstdev(rep):.2f} spread={(max(rep)-min(rep))/st.mean(rep)*100:.2f}%")
 print("== R2cZ vs R2bZ crossover (SAME pool, both seed 0) ==")
-for c in (120, 144):
+for c in (108, 120, 132, 144):
     k0, k1 = total(f"R2bZ_c{c}t"), total(f"R2cZ_c{c}t")
-    print(f"   @{c}t ({c//2} lanes/rep): k=0 {k0:.2f}  k=1 {k1:.2f}  -> {(k1-k0)/k0*100:+.2f}%")
+    if k0 != k0 or k1 != k1:
+        print(f"   @{c}t ({c//2} lanes/rep): k=0 {k0}  k=1 {k1}  -> n/a (incomplete)")
+    else:
+        print(f"   @{c}t ({c//2} lanes/rep): k=0 {k0:.2f}  k=1 {k1:.2f}  -> {(k1-k0)/k0*100:+.2f}%")
 EOF
 else
   log "ABORT R2cZ boot failed"
@@ -742,41 +782,66 @@ fi
 # ---------- P20: FV — the whole four-factor chain on ONE seed ----------
 # The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
 # fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to
-# R2b48(701/702). Each row is individually defensible (the k=0 pool-sensitivity
-# bound is <=0.25%) but the CHAIN is not one pool, so the +60.07% product closes
-# over three different pools. Re-measuring the three TP2 rungs at seed 0 — the
-# seed R2b48z (549.20) and R2cZ already use — makes the entire chain
-# same-pool AND same-window, which is the strongest form the headline can take.
+# R2b48(701/702). That is a COMPARABILITY defect, not a closure defect: the
+# product of the four ratios is an identity that closes for any node values
+# (each row is next/prev, so it telescopes to end/start). What the mixed pools
+# actually cost is ~1.2pp of ambiguity in where the boundary between 调度步长
+# and 布局 falls (bounded by SB's same-pool +5.66% vs the recorded +4.47%).
+# Re-measuring the three TP2 rungs at seed 0 — the seed R2b48z (549.20) and
+# R2cZ already use — makes the whole chain same-pool AND same-window, which is
+# the strongest form the headline can take: every individual RATIO is then a
+# same-pool number, and the split is pinned instead of bounded.
 # Three boots because the flag needs its own server; each is one bench point.
 if want FV; then
 FORCE_SEED=0 tp2_phase FV0 "2,3" "" "48"
 FORCE_SEED=0 tp2_phase FV1 "2,3" "--quantization fp8 --kv-cache-dtype fp8" "48"
 FORCE_SEED=0 tp2_phase FV2 "2,3" "--quantization fp8 --kv-cache-dtype fp8 --max-num-batched-tokens 8192" "48"
 $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
-import re, sys
+import os, re, sys
 out = sys.argv[1]
-def val(tag, key):
-    txt = open(f"{out}/bench_{tag}_c48.log").read()
-    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
+def pick(f, key):
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
     return float(m.group(1)) if m else float("nan")
+def val(tag, key):
+    # SINGLE point (tp2_phase writes bench_<tag>_c48.log, one replica).
+    return pick(f"{out}/bench_{tag}_c48.log", key)
 def dual(pt):
-    # pt is the FULL point tag, e.g. "R2b48z_c48t" or "R2cZ_c48t_a" — the bench
-    # files are bench_<point>_p1.log / _p2.log. An earlier draft appended "_c48t"
-    # to tags that already carried it, which would have read a nonexistent file
-    # and printed nan for the layout and spec rows without failing loudly.
-    return sum(val(f"{pt}_p{i}", "Output token throughput") for i in (1, 2))
+    # DUAL point: the bench files are bench_<point>_p1.log / _p2.log, i.e. the
+    # port index — NOT bench_<point>_p1_c48.log. Two separate bugs lived here and
+    # both produced nan rather than an error, which is why this block is now
+    # dry-run against real logs before any run depends on it:
+    #   (1) an earlier draft built the tag by appending "_c48t" to tags that
+    #       already carried it;
+    #   (2) even after that fix, this function still handed the point tag to
+    #       val(), which appends "_c48" — so 布局 and 投机 read nonexistent files
+    #       and printed nan while the block "succeeded". Val/dual are now split.
+    return sum(pick(f"{out}/bench_{pt}_p{i}.log", "Output token throughput")
+               for i in (1, 2))
 b0 = val("FV0", "Output token throughput")
 b1 = val("FV1", "Output token throughput")
 b2 = val("FV2", "Output token throughput")
 layout = dual("R2b48z_c48t")
 spec   = dual("R2cZ_c48t_a")
 print("== FV four-factor chain, ALL on seed 0 (one pool) ==")
+# Loud failure beats quiet nan: three of these five values come from files this
+# block does not itself create, so an incomplete run must say so on its face
+# rather than emit "nan" in a table someone reads a week later.
+_missing = [n for n, v in (("FV0", b0), ("FV1", b1), ("FV2", b2),
+                           ("R2b48z_c48t", layout), ("R2cZ_c48t_a", spec)) if v != v]
+print(f"  completeness: {'ALL FIVE PRESENT' if not _missing else 'INCOMPLETE -> ' + ', '.join(_missing)}")
 print(f"  量化   bf16->fp8 w+kv : {b0:.2f} -> {b1:.2f}  {(b1-b0)/b0*100:+.2f}%")
 print(f"  调度   2048->8192     : {b1:.2f} -> {b2:.2f}  {(b2-b1)/b1*100:+.2f}%")
 print(f"  布局   TP2->2 replica : {b2:.2f} -> {layout:.2f}  {(layout-b2)/b2*100:+.2f}%")
 print(f"  投机   k=0 -> k=1     : {layout:.2f} -> {spec:.2f}  {(spec-layout)/layout*100:+.2f}%")
 prod = (b1/b0)*(b2/b1)*(layout/b2)*(spec/layout)
+# `prod` is printed for completeness ONLY. It is an identity (the four ratios
+# telescope), so "it closed" is not evidence and must never be quoted as such.
+# The evidence in this block is that each RATIO above is now a same-pool number.
 print(f"  product {prod:.5f} vs end/start {spec/b0:.5f}  -> total {(spec-b0)/b0*100:+.2f}%")
+print( "  NOTE: product==end/start is an IDENTITY (the ratios telescope). Do not")
+print( "  cite the agreement; cite that every ratio here is same-pool/same-window.")
 EOF
 fi
 
