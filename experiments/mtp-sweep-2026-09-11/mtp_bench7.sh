@@ -1061,6 +1061,102 @@ print("   operating point -- this whole band is deep-overload (see 发现 E).")
 EOF
 fi
 
+# ---------- P23: Z4 — pre-registered replication of the k=0 @138t cliff ----------
+# Z3 found the cliff by SWEEPING, not by testing a hypothesis, so its README
+# entry is labelled "hypothesis-generating" and is barred from every conclusion.
+# Project rule: a post-hoc finding needs its own pre-registered test before it
+# can move. Z4 is that test. Same shape as Z2/Z3 (one boot per arm, discarded
+# warm-up, positions aligned). @136t and @140t bracket the cliff from both sides
+# (Z3 only had 66 and 72); @138tr re-reads the cliff rung in place.
+# The k=1 arm is DESCRIPTIVE ONLY -- four more hypotheses on a second arm would
+# be multiple comparisons dressed up as findings.
+if want Z4; then
+  for spec in 0 1; do
+    if [ "$spec" = "1" ]; then sp="--speculative-config '$SPEC1'"; pfx=R2cZy
+    else sp=""; pfx=R2bZy; fi
+    boot_replica 8341 $RPA $OUT/server_${pfx}_1.log "$sp"; Z41=$LAST_PID
+    boot_replica 8342 $RPB $OUT/server_${pfx}_2.log "$sp"; Z42=$LAST_PID
+    if wait_up 8341 && wait_up 8342; then
+      log "$pfx pair up ($Z41/$Z42)"
+      startup_lines $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      FORCE_SEED=0 bench_pair ${pfx}_w0    60 120 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      for c in 132 136 138; do
+        FORCE_SEED=0 bench_pair ${pfx}_c${c}t $((c/2)) $c 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      done
+      # in-place re-read of the cliff rung, deliberately at the NEXT position
+      FORCE_SEED=0 bench_pair ${pfx}_c138tr 69 138 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      for c in 140 144; do
+        FORCE_SEED=0 bench_pair ${pfx}_c${c}t $((c/2)) $c 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      done
+      spec_metrics ${pfx}_c138t 8341 8342
+    else
+      log "ABORT $pfx boot failed"
+    fi
+    kill_srv $Z41; kill_srv $Z42
+    gpu_snap
+  done
+  log "Z4 phase done"
+  # Q1-Q4 verdicts computed HERE from the README's pre-registered thresholds,
+  # so a miss cannot be re-interpreted after the fact. k=1 gets NO verdicts.
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import os, re, sys
+out = sys.argv[1]
+Z3_138 = 646.25          # the post-hoc number under test
+def g(f, key):
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
+    return float(m.group(1)) if m else float("nan")
+def total(tag):
+    return sum(g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput") for i in (1, 2))
+RUNGS = [132, 136, 138, 140, 144]
+print("== Z4: pre-registered replication of the k=0 @138t cliff ==")
+_miss = [t for p in ("R2bZy", "R2cZy") for t in
+         [f"{p}_w0"] + [f"{p}_c{c}t" for c in RUNGS] + [f"{p}_c138tr"]
+         if total(t) != total(t)]
+print(f"  completeness: {'ALL TWELVE PRESENT' if not _miss else 'INCOMPLETE -> ' + ', '.join(_miss)}")
+L = {}
+for pfx, name in (("R2bZy", "k=0"), ("R2cZy", "k=1")):
+    L[name] = {c: total(f"{pfx}_c{c}t") for c in RUNGS}
+    L[name]["r"] = total(f"{pfx}_c138tr")
+    print(f"  {name} ladder (warm, positions aligned):")
+    for c in RUNGS:
+        v = L[name][c]
+        print(f"     @{c}t ({c//2:>2} lanes/rep): {v:8.2f}" if v == v else
+              f"     @{c}t ({c//2:>2} lanes/rep): MISSING")
+    r = L[name]["r"]
+    print(f"     @138t REPEAT: {r:8.2f}" if r == r else "     @138t REPEAT: MISSING")
+print("== pre-registered verdicts (PRIMARY: k=0 arm only) ==")
+k0 = L["k=0"]
+v138, v138r = k0[138], k0["r"]
+v136, v140, v144 = k0[136], k0[140], k0[144]
+if v138 == v138:
+    ok = v138 <= 660 and v138 < v136 and v138 < v140
+    print(f"   Q1 (cliff reproduces at @138t): {'CONFIRMED' if ok else 'FALSIFIED'}"
+          f"   [@{138}t {v138:.2f} vs Z3 {Z3_138:.2f}; <=660: {v138 <= 660};"
+          f" below @136t: {v138 < v136}; below @140t: {v138 < v140}]")
+if v136 == v136 and v140 == v140:
+    ok = v136 >= 685 and v140 >= 685
+    print(f"   Q2 (narrow notch, not broad sag): {'CONFIRMED' if ok else 'FALSIFIED'}"
+          f"   [@136t {v136:.2f}, @140t {v140:.2f}, both must be >= 685]")
+if v138 == v138 and v138r == v138r:
+    d = abs(v138r - v138) / v138 * 100
+    v = "CONFIRMED" if d <= 2.0 else ("FALSIFIED" if d > 3.0 else "AMBIGUOUS (2-3%)")
+    print(f"   Q3 (in-place re-read stable): {v}   [{v138:.2f} -> {v138r:.2f} = {d:.2f}%]")
+if v138 == v138 and v144 == v144:
+    d = (v144 - v138) / v138 * 100
+    v = "CONFIRMED" if d >= 3.0 else ("FALSIFIED" if d <= 1.0 else "AMBIGUOUS (1-3%)")
+    print(f"   Q4 (partial recovery at @144t): {v}   [{v138:.2f} -> {v144:.2f} = {d:+.2f}%]")
+k1 = L["k=1"]
+if k1[138] == k1[138]:
+    print(f"   [secondary, NO VERDICT] k=1 @138t = {k1[138]:.2f} "
+          f"(k=0 {v138:.2f} -> k=1/k=0 ratio {(k1[138]/v138 if v138 == v138 else float('nan')):.3f})")
+print("   NOTE: deep-overload band. The cliff is STRUCTURE, not an operating point:")
+print("   nothing here revises any outward-facing number, and 24-60 lanes/replica")
+print("   -- the deployment range -- is untouched by this phase.")
+EOF
+fi
+
 # ---------- P20: FV — the whole four-factor chain on ONE seed ----------
 # The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
 # fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to
