@@ -1,0 +1,2 @@
+--- <out-dir-7>/server_R2c_1.log
+--- <out-dir-7>/server_R2c_2.log

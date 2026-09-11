@@ -4,9 +4,14 @@
 # script second — the arm list here is a transcription of that document, not a
 # substitute for it.
 #
-# Window order (all one window): B0 -> B1 -> B1b -> R2c -> R2b -> B0'
+# Window order (all one window): B0 -> B1 -> B1b -> R2c -> R2b -> B1c -> B0'
 #   B0 and B0' bracket the window; |B0' - B0| > 3% voids the whole window.
 #   B1b is the amendment added after B1 exposed pitfall 19 (see below).
+#
+# Extension window (amendment 3, run after the P5 anchor): B0' -> R2b48 -> R2c0 -> B0''
+#   B0' (374.74) opens, B0'' closes. The P5 check already measured B0 -> B0' drift
+#   at 0.09%, so this second window inherits the same comparability. It exists to
+#   stop borrowing sweep6's R2b@48t as the shared denominator of two factors.
 #
 # Arms:
 #   B0   TP2 bf16 on GPU2+3, port 8343 — the baseline, historical flags.
@@ -190,10 +195,14 @@ spec_metrics() { # $1 tag $2... ports
 # totals come from summarize_dual, called here so every point is self-contained.
 bench_pair() {
   local tag=$1 conc=$2 np=$3 p0=$4 n=$5; shift 5
-  local logs=("$@") i pids=() bp k
+  local logs=("$@") i pids=() bp k s
   for i in $(seq 0 $((n-1))); do
-    SEED=$((SEED + 1))
-    bench_one $((p0+i)) $conc $np $OUT/bench_${tag}_p$((i+1)).log $SEED &
+    # FORCE_SEED pins the client seed (amendment 3: seed 0 reproduces sweep6's
+    # R2c_c48t prompt set byte for byte). Computed in the PARENT — an increment
+    # inside the per-replica background subshell would mutate a copy and desync
+    # the counter for every later point.
+    if [ -n "${FORCE_SEED:-}" ]; then s=$FORCE_SEED; else SEED=$((SEED + 1)); s=$SEED; fi
+    bench_one $((p0+i)) $conc $np $OUT/bench_${tag}_p$((i+1)).log $s &
     pids+=($!)
   done
   bp=${pids[0]}
@@ -276,7 +285,7 @@ tp2_phase() { # $1 tag $2 gpu-pair $3 quant flags $4 concurrency list (default "
 # pre-registration says it means.
 #   PHASES=B0            bash mtp_bench7.sh   # just the baseline
 #   PHASES="B0 B1"       bash mtp_bench7.sh
-PHASES=${PHASES:-"B0 B1 B1b R2c R2b B0p"}
+PHASES=${PHASES:-"B0 B1 B1b R2c R2b B1c B0p R2b48 R2c0 B0pp"}
 want() { case " $PHASES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 log "sweep7 start: baseline fix + gain split + ceiling | PHASES=$PHASES"
@@ -298,6 +307,12 @@ if want B1; then tp2_phase B1 "2,3" "--quantization fp8 --kv-cache-dtype fp8"; f
 # @96 answers the other open question: B1 sat at only 13.6% KV usage @48, so its
 # 488 may be load-limited rather than ceiling-limited.
 if want B1b; then tp2_phase B1b "2,3" "--quantization fp8 --kv-cache-dtype fp8 --max-num-batched-tokens 8192" "48 96"; fi
+
+# ---------- P2c: B1c 卡对效应控制臂 (B1b 的配置换到 GPU1+2, 只跑 @48) ----------
+# B0/B1/B1b live on GPU2+3 and every R2 arm lives on GPU1+2 — a cross-card-pair
+# difference is asserted in the fairness list but was never measured, and the
+# layout factor it would confound is only +7.5%. One point settles it.
+if want B1c; then tp2_phase B1c "1,2" "--quantization fp8 --kv-cache-dtype fp8 --max-num-batched-tokens 8192" "48"; fi
 
 # ---------- P3: R2c k=1 pair (GPU1+2) ----------
 if want R2c; then
@@ -336,19 +351,85 @@ gpu_snap
 fi
 
 # ---------- P5: closing anchor B0' (TP2 bf16, GPU2+3) — window validity ----------
-# Only meaningful when B0 also ran; a B0p alone has nothing to bracket.
-if want B0p && want B0; then
+# The gate tests the ANCHOR ARTIFACT, not the PHASES list. Gating on `want B0`
+# meant `PHASES=B0p` alone silently did nothing — the phase was skipped with no
+# error, which is the same failure mode as pitfall 18 (a check that can only
+# fail silently). What the window check needs is bench_B0_c48.log on disk; if
+# it is there, the bracket is meaningful regardless of how it was produced.
+if want B0p && [ -s $OUT/bench_B0_c48.log ]; then
 tp2_phase B0p "2,3" ""
-$VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+$VENV/python - "$OUT" "B0" "B0p" <<'EOF' >> $OUT/summary.txt
 import re, sys
-out = sys.argv[1]
+out, t1, t2 = sys.argv[1], sys.argv[2], sys.argv[3]
 def val(tag, key):
     txt = open(f"{out}/bench_{tag}_c48.log").read()
     m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
     return float(m.group(1)) if m else float("nan")
-a, b = val("B0", "Output token throughput"), val("B0p", "Output token throughput")
+a, b = val(t1, "Output token throughput"), val(t2, "Output token throughput")
 d = abs(b - a) / a * 100
-print(f"== WINDOW CHECK ==\nB0={a:.2f} B0'={b:.2f} drift={d:.2f}% -> " + ("VALID" if d <= 3 else "VOID (>3%)"))
+print(f"== WINDOW CHECK {t1} vs {t2} ==\n{t1}={a:.2f} {t2}={b:.2f} drift={d:.2f}% -> " + ("VALID" if d <= 3 else "VOID (>3%)"))
+EOF
+fi
+
+# ---------- P8/P9 + closing anchor: amendment 3 extension window ----------
+# The 布局 and 投机 factors both rest on ONE borrowed denominator — sweep6's
+# R2b@48t = 548.17. Their PRODUCT is already same-window (R2c@48t / B1b =
+# 600.40/509.83 = +17.77%), so what is unknown is only how to SPLIT it. This
+# extension buys the split directly instead of borrowing it across windows.
+# Window: B0p (the P5 anchor, already measured) opens, B0pp closes.
+
+# ---------- P8: R2b48 — the k=0 @24-lane cell, same window as the k=1 one ----------
+if want R2b48; then
+boot_replica 8341 1 $OUT/server_R2b48_1.log ""; RB1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2b48_2.log ""; RB2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2b48 pair up ($RB1/$RB2)"
+  startup_lines $OUT/server_R2b48_1.log $OUT/server_R2b48_2.log
+  bench_pair R2b48_c48t 24 48 8341 2 $OUT/server_R2b48_1.log $OUT/server_R2b48_2.log
+else
+  log "ABORT R2b48 boot failed"
+fi
+kill_srv $RB1; kill_srv $RB2
+log "R2b48 phase done"
+gpu_snap
+fi
+
+# ---------- P9: R2c0 — same config as R2c, but seed 0 = sweep6's exact prompt set ----------
+# Two independent questions, one measurement:
+#   same-window A/B: R2c0(seed 0) vs R2c_c48t(seed 708/709) — differs ONLY in the
+#     prompt set, so the gap is the pure prompt-set / MTP-acceptance effect.
+#   cross-window A/B: R2c0(sweep7) vs 618.76(sweep6) — same prompt set, differs
+#     ONLY in the window, so the gap is pure window drift.
+# If the same-window gap comes out ~0, the acceptance explanation is FALSIFIED.
+if want R2c0; then
+boot_replica 8341 1 $OUT/server_R2c0_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2c0_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2c0 pair up ($RC1/$RC2)"
+  startup_lines $OUT/server_R2c0_1.log $OUT/server_R2c0_2.log
+  FORCE_SEED=0 bench_pair R2c0_c48t 24 48 8341 2 $OUT/server_R2c0_1.log $OUT/server_R2c0_2.log
+  spec_metrics R2c0_c48t 8341 8342
+else
+  log "ABORT R2c0 boot failed"
+fi
+kill_srv $RC1; kill_srv $RC2
+log "R2c0 phase done"
+gpu_snap
+fi
+
+# ---------- P10: extension closing anchor B0'' ----------
+if want B0pp && [ -s $OUT/bench_B0p_c48.log ]; then
+tp2_phase B0pp "2,3" "" "48"
+$VENV/python - "$OUT" "B0p" "B0pp" <<'EOF' >> $OUT/summary.txt
+import re, sys
+out, t1, t2 = sys.argv[1], sys.argv[2], sys.argv[3]
+def val(tag, key):
+    txt = open(f"{out}/bench_{tag}_c48.log").read()
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
+    return float(m.group(1)) if m else float("nan")
+a, b = val(t1, "Output token throughput"), val(t2, "Output token throughput")
+d = abs(b - a) / a * 100
+print(f"== WINDOW CHECK {t1} vs {t2} ==\n{t1}={a:.2f} {t2}={b:.2f} drift={d:.2f}% -> " + ("VALID" if d <= 3 else "VOID (>3%)"))
 EOF
 fi
 

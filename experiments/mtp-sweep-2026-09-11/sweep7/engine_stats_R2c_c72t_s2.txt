@@ -1,0 +1,12 @@
+--- <out-dir-7>/server_R2c_1.log
+(APIServer pid=125004) INFO 09-11 13:18:36 [loggers.py:310] Engine 000: Avg prompt throughput: 2583.5 tokens/s, Avg generation throughput: 30.7 tokens/s, Running: 24 reqs, Waiting: 0 reqs, GPU KV cache usage: 93.9%, Prefix cache hit rate: 0.0%
+(APIServer pid=125004) INFO 09-11 13:18:46 [loggers.py:310] Engine 000: Avg prompt throughput: 107.6 tokens/s, Avg generation throughput: 551.8 tokens/s, Running: 23 reqs, Waiting: 0 reqs, GPU KV cache usage: 89.9%, Prefix cache hit rate: 0.0%
+(APIServer pid=125004) INFO 09-11 13:18:56 [loggers.py:310] Engine 000: Avg prompt throughput: 2474.9 tokens/s, Avg generation throughput: 159.5 tokens/s, Running: 24 reqs, Waiting: 0 reqs, GPU KV cache usage: 93.9%, Prefix cache hit rate: 0.0%
+(APIServer pid=125004) INFO 09-11 13:19:06 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 486.7 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=125004) INFO 09-11 13:19:16 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+--- <out-dir-7>/server_R2c_2.log
+(APIServer pid=125005) INFO 09-11 13:18:36 [loggers.py:310] Engine 000: Avg prompt throughput: 2583.2 tokens/s, Avg generation throughput: 64.6 tokens/s, Running: 24 reqs, Waiting: 0 reqs, GPU KV cache usage: 93.9%, Prefix cache hit rate: 0.0%
+(APIServer pid=125005) INFO 09-11 13:18:46 [loggers.py:310] Engine 000: Avg prompt throughput: 323.0 tokens/s, Avg generation throughput: 521.6 tokens/s, Running: 21 reqs, Waiting: 0 reqs, GPU KV cache usage: 82.1%, Prefix cache hit rate: 0.0%
+(APIServer pid=125005) INFO 09-11 13:18:56 [loggers.py:310] Engine 000: Avg prompt throughput: 2260.4 tokens/s, Avg generation throughput: 181.9 tokens/s, Running: 24 reqs, Waiting: 0 reqs, GPU KV cache usage: 93.9%, Prefix cache hit rate: 0.0%
+(APIServer pid=125005) INFO 09-11 13:19:06 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 460.6 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%
+(APIServer pid=125005) INFO 09-11 13:19:16 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 0.0 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%

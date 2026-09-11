@@ -6,3 +6,20 @@
 12:36:58 B1 up (pid 114382)
 12:39:32 B1 phase done
 12:39:32 ALL_DONE
+12:50:07 sweep7 start: baseline fix + gain split + ceiling | PHASES=B1b
+12:52:57 B1b up (pid 119750)
+12:54:56 B1b phase done
+12:54:56 ALL_DONE
+13:11:09 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2c R2b B1c
+13:12:59 B1c up (pid 122654)
+13:14:06 B1c phase done
+13:18:16 R2c pair up (125004/125005)
+13:20:31 R2c phase done
+13:23:11 R2b pair up (129829/129830)
+13:28:44 R2b phase done
+13:28:44 ALL_DONE
+14:36:35 sweep7 start: baseline fix + gain split + ceiling | PHASES=B0p
+14:38:25 B0p up (pid 134432)
+14:41:43 B0p phase done
+14:41:43 ALL_DONE
+14:43:33 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2b48 R2c0 B0pp

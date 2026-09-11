@@ -1,0 +1,2 @@
+--- <out-dir-7>/server_B0p.log
+(APIServer pid=134432) INFO 09-11 14:38:37 [loggers.py:310] Engine 000: Avg prompt throughput: 430.7 tokens/s, Avg generation throughput: 0.7 tokens/s, Running: 7 reqs, Waiting: 9 reqs, GPU KV cache usage: 7.7%, Prefix cache hit rate: 0.0%
