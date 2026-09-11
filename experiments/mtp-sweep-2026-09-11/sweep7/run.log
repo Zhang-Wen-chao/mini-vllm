@@ -31,3 +31,26 @@
 14:52:50 B0pp phase done
 14:52:50 ALL_DONE
 15:00:25 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2c0b R2cH B0ppp
+15:02:16 R2c0b pair up (145969/145970)
+15:03:23 R2c0b phase done
+15:05:13 R2cH pair up (149015/149016)
+15:09:17 R2cH phase done
+15:11:07 B0ppp up (pid 152815)
+15:12:33 B0ppp phase done
+15:12:33 ALL_DONE
+15:13:34 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2cAB
+15:15:14 R2cAB pair up (155441/155442)
+15:15:14 SEED COLLISION (same phase): R2cAB70_c48t_p2 seed=702 already used by R2cAB70_c48t_p1
+15:16:02 SEED COLLISION (same phase): R2cAB00_c48t_p2 seed=0 already used by R2cAB00_c48t_p1
+15:17:09 R2cAB phase done
+15:17:09 ALL_DONE
+15:49:28 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2b48z SB
+15:51:19 SB2048 up (pid 159364)
+15:52:29 SB2048 phase done
+15:54:19 SB8192 up (pid 161901)
+15:55:26 SB8192 phase done
+15:57:17 R2b48z pair up (164262/164263)
+15:58:31 R2b48z phase done
+15:58:31 ALL_DONE
+16:08:44 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2cABr R2bZ R2cZ FV
+16:08:44 WAIT_GPU 1: 1:17014MiB (poll 1)

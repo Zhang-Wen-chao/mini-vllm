@@ -75,7 +75,16 @@ log() { echo "$(date +%H:%M:%S) $*" >> $OUT/run.log; }
 # host loadavg catches a neighbour taking CPU on this shared box (loadavg ran
 # 16/10/9 during B0, which no earlier sweep had ever recorded).
 gpu_snap() { echo "--- $(date +%H:%M:%S) loadavg=$(cut -d' ' -f1-3 /proc/loadavg)" >> $OUT/gpu_snapshots.txt
-  nvidia-smi --query-gpu=index,memory.used,utilization.gpu,clocks.sm,power.draw,temperature.gpu --format=csv,noheader >> $OUT/gpu_snapshots.txt; }
+  nvidia-smi --query-gpu=index,memory.used,utilization.gpu,clocks.sm,clocks.mem,power.draw,power.limit,temperature.gpu --format=csv,noheader >> $OUT/gpu_snapshots.txt
+  # PITFALL 22 — the original query carried clocks.sm but NOT clocks.mem, and no
+  # throttle-reason field. A uniform +9% per-decode-step slowdown (R2c_c48t ran
+  # 6.04 ms/step against 5.55 for the same config) is exactly what memory-clock
+  # throttling or a power cap produces, and with those fields absent the record
+  # could not tell "the machine was slow" from "our config changed" — the same
+  # blind spot that cost a diagnostic round on the B0 anchor. Both fields exist
+  # on this driver (checked before use: clocks.mem 9000 MHz, power.limit 350 W,
+  # clocks_throttle_reasons.active 0x0), so they go in.
+  nvidia-smi --query-gpu=index,clocks_throttle_reasons.active --format=csv,noheader >> $OUT/gpu_snapshots.txt 2>/dev/null || true; }
 
 # load_snap — loadavg DURING the load, not just before/after it. gpu_snap only
 # brackets a bench point, so a neighbour that spikes for 30s mid-run is invisible
@@ -87,6 +96,10 @@ wait_up() { # $1 port
   for i in $(seq 1 120); do
     sleep 10
     curl -s "http://127.0.0.1:$1/health" > /dev/null 2>&1 && return 0
+    # Past the GPU deadline no server was ever launched on this port, so do not
+    # burn the full 20-minute budget waiting for one. The phase still logs its
+    # ABORT line, so the failure stays visible in run.log either way.
+    [ "${GPU_GATE_FAILED:-0}" = "1" ] && return 1
   done
   return 1
 }
@@ -111,8 +124,119 @@ kill_srv() { # $1 pid
 # identical KV pool (264,071 tok / 32.24x) and an identical client namespace.
 # Every bench point now takes its own seed, so prompt pools never overlap and
 # the measurement is order-independent.
-SEED=700
+#
+# PITFALL 21 — THAT FIX WAS INCOMPLETE, and the reproducibility audit caught it.
+# `SEED=$((SEED + 1))` looked per-point, but SEED is a SCRIPT-LEVEL global:
+# every separate `bash mtp_bench7.sh` invocation restarted at 700, so tags
+# measured in different invocations collided. Extracted from each bench log's
+# own `Namespace(... seed=N ...)` header (sweep7/seeds.txt): 701 used 6x,
+# 702 used 6x, 703 used 2x, 0 used 2x.
+#
+# Contamination did NOT follow. Every collision is ACROSS boots — each phase
+# boots a fresh server, so no prompt pool was ever re-read from a warm KV cache
+# — and 349/349 engine samples read `Prefix cache hit rate: 0.0%`. What it did
+# cost was COMPARABILITY: the 调度步长 segment pits B1_c48 (seed 702) against
+# B1b_c48 (seed 701), two different prompt pools.
+#
+# The fix is a FROZEN table, NOT a new derivation. Re-deriving by hash would
+# hand every future re-run a different prompt set from the run it exists to
+# reproduce — the opposite of the point. Tags already measured keep the seed
+# they were actually measured with; anything not listed falls through to a
+# tag-keyed hash, so new tags are invocation-independent and cannot collide
+# with a recorded one. FORCE_SEED still overrides everything.
+PHASE_ID=""   # set by each bench entry point; see seed_snap()
+SEED_TABLE=$(cat <<'TBL'
+B0_c16 701
+B0_c48 702
+B0p_c16 701
+B0p_c48 702
+B0pp_c48 703
+B1_c16 701
+B1_c48 702
+B1b_c48 701
+B1b_c96 702
+B1c_c48 701
+R2b48_c48t_p1 701
+R2b48_c48t_p2 702
+R2b_c120t_p1 708
+R2b_c120t_p2 709
+R2b_c144t_p1 710
+R2b_c144t_p2 711
+R2b_c96t_p1 706
+R2b_c96t_p2 707
+R2c0_c48t_p1 0
+R2c0_c48t_p2 0
+R2c0b_c48t_p1 0
+R2c0b_c48t_p2 0
+R2cAB00_c48t_p1 0
+R2cAB00_c48t_p2 0
+R2c_c48t_p1 702
+R2c_c48t_p2 703
+R2c_c72t_p1 704
+R2c_c72t_p2 705
+TBL
+)
 
+# seed_for — $1 point tag (the name in bench_<tag>.log) -> client seed.
+# Table hit wins so recorded tags reproduce byte for byte; anything else gets a
+# tag-keyed hash. Stable across invocations, and the 1000+ floor keeps new tags
+# clear of the 0-711 range the frozen table occupies, so a new tag can never
+# silently land on a recorded one.
+seed_for() {
+  local s
+  s=$(awk -v t="$1" '$1==t {print $2; exit}' <<<"$SEED_TABLE")
+  if [ -n "$s" ]; then echo "$s"; else
+    printf '%s' "$1" | cksum | awk '{print 1000 + ($1 % 8000)}'
+  fi
+}
+
+# seed_snap — every point writes its own tag->seed pair to seeds_used.txt, so
+# the map is auditable with a grep rather than decoded out of each bench log's
+# 2000-character Namespace dump. The collision alarm is the part the old
+# counter structurally could not have: 坑 21 was invisible precisely because
+# nothing ever compared one point's seed against another's.
+#
+# It deliberately does NOT fire on legitimate alias pairs (B0_c16/B0p_c16/
+# B1_c16 all share 701 by measurement). Those are different phases, each on a
+# fresh boot with a cold KV cache, so sharing a pool cannot contaminate
+# anything — 坑 16 needed the SAME server to serve two benches to bite. The
+# alarm exists for the case that WOULD be new: two points inside one phase.
+seed_snap() { # $1 point tag $2 seed
+  local prev
+  # FORCE_SEED shares one seed across both replicas of an arm ON PURPOSE, so the
+  # alarm must not fire on it — R2cAB's first run reported exactly that pair and
+  # it was the design working, not a defect.
+  #
+  # CORRECTION (found while auditing R2cAB): an earlier version of this comment
+  # claimed the replicas take DISJOINT halves of the pool. They do not. In
+  # bench_pair, `p0+i` is the PORT, not a prompt offset — bench_one's 3rd arg is
+  # np for every replica, so each replica serves the SAME 48 prompts on its own
+  # server (Total input tokens 51668 = 2 x 25834 confirms it). The sharing is
+  # safe for a different reason: two servers, two KV caches, so the same prompt
+  # is never read from a cache warmed by its twin — which is precisely what
+  # 坑 16 needed to bite. Cross-replica pool identity is harmless; the alarm is
+  # for the case that is NOT deliberate, namely two points in one phase that
+  # reached the same seed by arithmetic, which is what 坑 21 produced.
+  if [ -z "${FORCE_SEED:-}" ]; then
+    prev=$(awk -v s="$2" -v t="$1" -v p="$PHASE_ID" \
+               '$2==s && $1!=t && $3==p {print $1; exit}' $OUT/seeds_used.txt 2>/dev/null)
+    [ -n "$prev" ] && log "SEED COLLISION (same phase): $1 seed=$2 already used by $prev"
+  fi
+  echo "$1 $2 $PHASE_ID" >> $OUT/seeds_used.txt
+}
+
+# seed_audit — dump the whole frozen table at startup, with every alias group
+# printed explicitly. The aliases are the audit's actual finding, not noise:
+# each one is a place where two recorded points share a prompt pool, and the
+# reader is entitled to see the list rather than trust that it is empty.
+seed_audit() {
+  { echo "== SEED AUDIT $(date +%H:%M:%S) =="
+    echo "$SEED_TABLE" | awk '
+      {n[$2] = n[$2] " " $1}
+      END {for (s in n) {c = split(n[s], a, " ")
+                         if (c > 1) printf "  alias seed %-4s -> %s\n", s, n[s]}}'
+  } >> $OUT/summary.txt
+}
 # Every metric line `vllm bench serve` prints. Both summarizers grep this one
 # pattern, so the single-card and replica paths can never drift apart — and the
 # per-point summary carries the full latency distribution (median/P99 TPOT, the
@@ -202,12 +326,16 @@ spec_metrics() { # $1 tag $2... ports
 bench_pair() {
   local tag=$1 conc=$2 np=$3 p0=$4 n=$5; shift 5
   local logs=("$@") i pids=() bp k s
+  PHASE_ID=$tag
   for i in $(seq 0 $((n-1))); do
-    # FORCE_SEED pins the client seed (amendment 3: seed 0 reproduces sweep6's
-    # R2c_c48t prompt set byte for byte). Computed in the PARENT — an increment
-    # inside the per-replica background subshell would mutate a copy and desync
-    # the counter for every later point.
-    if [ -n "${FORCE_SEED:-}" ]; then s=$FORCE_SEED; else SEED=$((SEED + 1)); s=$SEED; fi
+    # FORCE_SEED pins the client seed for BOTH replicas (seed 0 reproduces
+    # sweep6's R2c_c48t prompt set byte for byte). Otherwise the seed comes from
+    # seed_for() keyed on the per-REPLICA point tag, so two replicas of one arm
+    # get different pools and a re-run of the arm gets the same pools it had.
+    # Resolved in the PARENT: doing it inside the background subshell would
+    # evaluate against a copy and the per-replica tags would drift.
+    if [ -n "${FORCE_SEED:-}" ]; then s=$FORCE_SEED; else s=$(seed_for "${tag}_p$((i+1))"); fi
+    seed_snap "${tag}_p$((i+1))" "$s"
     bench_one $((p0+i)) $conc $np $OUT/bench_${tag}_p$((i+1)).log $s &
     pids+=($!)
   done
@@ -227,7 +355,58 @@ bench_pair() {
 
 # boot_replica sets the global LAST_PID. Not called via $(...) on purpose:
 # a command-substitution subshell would have to outlive its own background job.
+# wait_gpus — block until every listed card is free, then return.
+#
+# This is a SHARED box and the night of 2026-09-11 proved it matters: at 16:07 a
+# foreign job elsewhere on the host (16.7 GB resident on each of GPU1/2/3) took
+# all three cards my whole design runs on. 别人的进程不能动 — we
+# never kill it. We wait for it instead, and we RECORD the wait, because a
+# neighbour holding a card is exactly what would explain a slow window later and
+# I have already lost one diagnostic round to a stale GPU snapshot.
+#
+# The gate lives inside the two boot functions rather than at the ten call sites:
+# every phase allocates its cards through one of these two, so two insertions
+# cover the whole script and there is no way for a future phase to forget it.
+#
+# A card counts as busy at >2 GiB used. Our own servers claim ~44 GiB, a
+# neighbour's footprint is ~16.7 GB, and an idle card reads 295 MiB — the
+# threshold has an order of magnitude of headroom on both sides.
+#
+# The deadline exists so an overnight run terminates and reports rather than
+# blocking forever if the neighbour never leaves.
+WAIT_DEADLINE=${WAIT_DEADLINE:-$(($(date +%s) + 21600))}   # default 6h
+GPU_GATE_FAILED=0
+wait_gpus() { # $1 comma list, e.g. "1,2"
+  local want=$1 g used busy n=0
+  while :; do
+    busy=""
+    for g in ${want//,/ }; do
+      used=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i "$g" 2>/dev/null)
+      [ -n "$used" ] && [ "$used" -gt 2000 ] && busy="$busy $g:${used}MiB"
+    done
+    if [ -z "$busy" ]; then
+      [ "$n" -gt 0 ] && { log "GPUS_FREE $want after $n polls"; \
+        echo "$(date +%H:%M:%S) FREE $want waited $((n*30))s" >> $OUT/gpu_wait.txt; }
+      return 0
+    fi
+    n=$((n+1))
+    if [ $((n % 20)) -eq 1 ]; then
+      log "WAIT_GPU $want:$busy (poll $n)"
+      echo "$(date +%H:%M:%S) busy $want:$busy" >> $OUT/gpu_wait.txt
+      nvidia-smi --query-gpu=index,memory.used --format=csv,noheader >> $OUT/gpu_wait.txt
+    fi
+    if [ "$(date +%s)" -gt "$WAIT_DEADLINE" ]; then
+      log "WAIT_GPU DEADLINE hit waiting for $want:$busy — skipping this boot"
+      echo "$(date +%H:%M:%S) DEADLINE $want:$busy" >> $OUT/gpu_wait.txt
+      GPU_GATE_FAILED=1
+      return 1
+    fi
+    sleep 30
+  done
+}
+
 boot_replica() { # $1 port $2 gpu $3 logfile $4 extra flags
+  wait_gpus "$2" || { LAST_PID=""; return 1; }
   setsid bash -c "CUDA_VISIBLE_DEVICES=$2 HF_HUB_OFFLINE=1 $VENV/vllm serve $MODEL \
     --port $1 --served-model-name qwen38-27b --max-model-len 8192 \
     --quantization fp8 --max-num-seqs 128 --kv-cache-dtype fp8 \
@@ -236,6 +415,7 @@ boot_replica() { # $1 port $2 gpu $3 logfile $4 extra flags
 }
 
 boot_tp2() { # $1 gpu-pair $2 logfile $3 quant flags ("" = bf16 baseline)
+  wait_gpus "$1" || { LAST_PID=""; return 1; }
   setsid bash -c "CUDA_VISIBLE_DEVICES=$1 HF_HUB_OFFLINE=1 $VENV/vllm serve $MODEL \
     --port 8343 --served-model-name qwen38-27b --max-model-len 8192 \
     --tensor-parallel-size 2 --max-num-seqs 128 $3" > $2 2>&1 &
@@ -247,9 +427,11 @@ boot_tp2() { # $1 gpu-pair $2 logfile $3 quant flags ("" = bf16 baseline)
 # without it B0's @48 cannot be put next to R2c's 94.4% wall. Same 3-sample
 # protocol as bench_pair so the two paths are symmetric.
 bench_single_sampled() { # $1 tag $2 conc $3 np $4 port $5 server log
-  local tag=$1 conc=$2 np=$3 port=$4 slog=$5 bp k
-  SEED=$((SEED + 1))
-  bench_one $port $conc $np $OUT/bench_$tag.log $SEED &
+  local tag=$1 conc=$2 np=$3 port=$4 slog=$5 bp k s
+  PHASE_ID=$tag
+  if [ -n "${FORCE_SEED:-}" ]; then s=$FORCE_SEED; else s=$(seed_for "$tag"); fi
+  seed_snap "$tag" "$s"
+  bench_one $port $conc $np $OUT/bench_$tag.log $s &
   bp=$!
   for k in 1 2 3; do
     sleep 8
@@ -293,10 +475,12 @@ tp2_phase() { # $1 tag $2 gpu-pair $3 quant flags $4 concurrency list (default "
 # pre-registration says it means.
 #   PHASES=B0            bash mtp_bench7.sh   # just the baseline
 #   PHASES="B0 B1"       bash mtp_bench7.sh
-PHASES=${PHASES:-"B0 B1 B1b R2c R2b B1c B0p R2b48 R2c0 B0pp R2c0b R2cH B0ppp"}
+PHASES=${PHASES:-"B0 B1 B1b R2c R2b B1c B0p R2b48 R2c0 B0pp R2c0b R2cH B0ppp R2cAB R2b48z SB"}
 want() { case " $PHASES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 log "sweep7 start: baseline fix + gain split + ceiling | PHASES=$PHASES"
+seed_audit
+: > $OUT/seeds_used.txt   # per-run; seed_snap appends the tag->seed->phase map
 gpu_snap
 
 # ---------- P1: B0 baseline (TP2 bf16, GPU2+3) ----------
@@ -402,6 +586,200 @@ log "R2b48 phase done"
 gpu_snap
 fi
 
+# ---------- P15: SB — 调度步长 on ONE prompt pool (closes the 坑 21 hole) ----------
+# The reproducibility audit found the 调度步长 row was the only one in the
+# four-factor table whose two ends sat on DIFFERENT prompt pools: B1_c48 was
+# measured at seed 702 and B1b_c48 at seed 701, because SEED was a per-invocation
+# global (坑 21). Every other row is safe — the k=0 pool-sensitivity bound is
+# <=0.25% by direct measurement (B0p 702->B0pp 703 = 0.18%, R2b48 cross-window
+# 0.25%, R2b_c96t 0.03%) — but "bounded by a measurement made elsewhere" is a
+# weaker claim than "measured directly", and this is the row the whole +4.5%
+# rests on. Two boots (the flag needs a different server), both FORCE_SEED=702,
+# both @48: the ONLY difference is --max-num-batched-tokens.
+if want SB; then
+FORCE_SEED=702 tp2_phase SB2048 "2,3" "--quantization fp8 --kv-cache-dtype fp8" "48"
+FORCE_SEED=702 tp2_phase SB8192 "2,3" "--quantization fp8 --kv-cache-dtype fp8 --max-num-batched-tokens 8192" "48"
+$VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import re, sys
+out = sys.argv[1]
+def val(tag, key):
+    txt = open(f"{out}/bench_{tag}_c48.log").read()
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
+    return float(m.group(1)) if m else float("nan")
+a, b = val("SB2048", "Output token throughput"), val("SB8192", "Output token throughput")
+print(f"== SB same-pool 调度步长 A/B (both seed 702) ==\n"
+      f"2048={a:.2f} 8192={b:.2f} gain={(b-a)/a*100:+.2f}%\n"
+      f"compare recorded B1 488.01 -> B1b 509.83 = +4.47% (different pools)")
+EOF
+fi
+
+# ---------- P16: R2b48z — the k=0 @48t denominator on seed 0 ----------
+# Same reason as SB, applied to the headline row. The 投机 factor currently
+# divides R2c(seed 0) by R2b48(seeds 701/702), so numerator and denominator sit
+# on different pools. Re-measuring the denominator at seed 0 makes the ratio
+# same-pool as well as same-window, which is what the +74% claim needs.
+if want R2b48z; then
+boot_replica 8341 1 $OUT/server_R2b48z_1.log ""; RZ1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2b48z_2.log ""; RZ2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2b48z pair up ($RZ1/$RZ2)"
+  startup_lines $OUT/server_R2b48z_1.log $OUT/server_R2b48z_2.log
+  FORCE_SEED=0 bench_pair R2b48z_c48t 24 48 8341 2 $OUT/server_R2b48z_1.log $OUT/server_R2b48z_2.log
+else
+  log "ABORT R2b48z boot failed"
+fi
+kill_srv $RZ1; kill_srv $RZ2
+log "R2b48z phase done"
+gpu_snap
+fi
+
+# ---------- P17: R2cABr — three points on one boot: 0, 702, 0 ----------
+# R2cAB (seed702 645.39 then seed0 661.29, +2.46%) has THREE readings and they
+# cannot be told apart from one pair:
+#   (i)  a genuine prompt-pool effect;
+#   (ii) an ORDER effect — the first bench on a fresh boot may be the slow one;
+#   (iii) ordinary noise. TTFT alone swung 1912 / 2415 / 2430 ms across three
+#        seed-0 points on three boots, i.e. ~20%, and r0 vs r1 sit 40s apart.
+# Running 0, 702, 0 in that order separates all three: if the two seed-0 points
+# agree and 702 sits below both, the pool effect is real and order is excluded;
+# if point 1 and point 3 straddle 702, it was order; if all three scatter ~2%,
+# then 2% IS the noise floor here and the amendment-4 band must be widened.
+# Three benches back to back, no anchor — the points bracket each other.
+if want R2cABr; then
+boot_replica 8341 1 $OUT/server_R2cABr_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2cABr_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2cABr pair up ($RC1/$RC2)"
+  startup_lines $OUT/server_R2cABr_1.log $OUT/server_R2cABr_2.log
+  FORCE_SEED=0   bench_pair R2cABr0a_c48t 24 48 8341 2 $OUT/server_R2cABr_1.log $OUT/server_R2cABr_2.log
+  FORCE_SEED=702 bench_pair R2cABr70_c48t 24 48 8341 2 $OUT/server_R2cABr_1.log $OUT/server_R2cABr_2.log
+  FORCE_SEED=0   bench_pair R2cABr0b_c48t 24 48 8341 2 $OUT/server_R2cABr_1.log $OUT/server_R2cABr_2.log
+  spec_metrics R2cABr0b_c48t 8341 8342
+else
+  log "ABORT R2cABr boot failed"
+fi
+kill_srv $RC1; kill_srv $RC2
+log "R2cABr phase done"
+gpu_snap
+fi
+
+# ---------- P18: R2bZ — the k=0 ladder on ONE pool (seed 0) ----------
+# Three things at once, all on one boot and one prompt pool:
+#   * 108t/132t (54/66 lanes) bracket the 682.96 peak at 120t (60 lanes) from
+#     both sides, so "the ceiling is at 60 lanes" stops resting on a single
+#     sample flanked by 96t and 144t, which are 12 lanes away on each side;
+#   * 120t/144t re-measured at seed 0 give the k=1 crossover a denominator on
+#     the SAME pool as its numerator — currently R2b_c120t/144t used seeds
+#     708-711 while R2cH used seed_for values, so the crossover compared two
+#     different pools;
+#   * the whole ladder at one seed on one boot is internally consistent, which
+#     the existing ladder (seeds 708-711, three separate boots) is not.
+if want R2bZ; then
+boot_replica 8341 1 $OUT/server_R2bZ_1.log ""; ZB1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2bZ_2.log ""; ZB2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2bZ pair up ($ZB1/$ZB2)"
+  startup_lines $OUT/server_R2bZ_1.log $OUT/server_R2bZ_2.log
+  for c in 108 120 132 144; do
+    FORCE_SEED=0 bench_pair R2bZ_c${c}t $((c/2)) $c 8341 2 $OUT/server_R2bZ_1.log $OUT/server_R2bZ_2.log
+  done
+  spec_metrics R2bZ_c144t 8341 8342
+else
+  log "ABORT R2bZ boot failed"
+fi
+kill_srv $ZB1; kill_srv $ZB2
+log "R2bZ phase done"
+gpu_snap
+fi
+
+# ---------- P19: R2cZ — k=1 repeats and the crossover, one pool (seed 0) ----------
+# The audit's biggest hole was that NO k=1 arm had ever been measured twice at
+# the same setting, so every k=1 number carried an unquantified error bar — and
+# after the 600.40 anomaly that error bar is the thing that matters most. Three
+# back-to-back c48t points on one boot measure it directly. Then 120t/144t at
+# the same pool as R2bZ give the crossover as a same-pool, same-window number.
+if want R2cZ; then
+boot_replica 8341 1 $OUT/server_R2cZ_1.log "--speculative-config '$SPEC1'"; ZC1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2cZ_2.log "--speculative-config '$SPEC1'"; ZC2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2cZ pair up ($ZC1/$ZC2)"
+  startup_lines $OUT/server_R2cZ_1.log $OUT/server_R2cZ_2.log
+  for r in a b c; do
+    FORCE_SEED=0 bench_pair R2cZ_c48t_${r} 24 48 8341 2 $OUT/server_R2cZ_1.log $OUT/server_R2cZ_2.log
+    spec_metrics R2cZ_c48t_${r} 8341 8342
+  done
+  FORCE_SEED=0 bench_pair R2cZ_c120t 60 120 8341 2 $OUT/server_R2cZ_1.log $OUT/server_R2cZ_2.log
+  FORCE_SEED=0 bench_pair R2cZ_c144t 72 144 8341 2 $OUT/server_R2cZ_1.log $OUT/server_R2cZ_2.log
+  spec_metrics R2cZ_c144t 8341 8342
+  # Report the k=1 noise floor and the same-pool crossover here, so the numbers
+  # exist as text next to the raw logs rather than being recomputed by hand later.
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import re, sys, statistics as st
+out = sys.argv[1]
+def g(f, key):
+    txt = open(f).read()
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
+    return float(m.group(1)) if m else float("nan")
+def total(tag):
+    return sum(g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput") for i in (1, 2))
+rep = [total(f"R2cZ_c48t_{r}") for r in "abc"]
+print("== R2cZ k=1 @48t noise floor (3 back-to-back, one boot, seed 0) ==")
+print("   " + "  ".join(f"{v:.2f}" for v in rep))
+print(f"   mean={st.mean(rep):.2f} sd={st.pstdev(rep):.2f} spread={(max(rep)-min(rep))/st.mean(rep)*100:.2f}%")
+print("== R2cZ vs R2bZ crossover (SAME pool, both seed 0) ==")
+for c in (120, 144):
+    k0, k1 = total(f"R2bZ_c{c}t"), total(f"R2cZ_c{c}t")
+    print(f"   @{c}t ({c//2} lanes/rep): k=0 {k0:.2f}  k=1 {k1:.2f}  -> {(k1-k0)/k0*100:+.2f}%")
+EOF
+else
+  log "ABORT R2cZ boot failed"
+fi
+kill_srv $ZC1; kill_srv $ZC2
+log "R2cZ phase done"
+gpu_snap
+fi
+
+# ---------- P20: FV — the whole four-factor chain on ONE seed ----------
+# The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
+# fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to
+# R2b48(701/702). Each row is individually defensible (the k=0 pool-sensitivity
+# bound is <=0.25%) but the CHAIN is not one pool, so the +60.07% product closes
+# over three different pools. Re-measuring the three TP2 rungs at seed 0 — the
+# seed R2b48z (549.20) and R2cZ already use — makes the entire chain
+# same-pool AND same-window, which is the strongest form the headline can take.
+# Three boots because the flag needs its own server; each is one bench point.
+if want FV; then
+FORCE_SEED=0 tp2_phase FV0 "2,3" "" "48"
+FORCE_SEED=0 tp2_phase FV1 "2,3" "--quantization fp8 --kv-cache-dtype fp8" "48"
+FORCE_SEED=0 tp2_phase FV2 "2,3" "--quantization fp8 --kv-cache-dtype fp8 --max-num-batched-tokens 8192" "48"
+$VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import re, sys
+out = sys.argv[1]
+def val(tag, key):
+    txt = open(f"{out}/bench_{tag}_c48.log").read()
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
+    return float(m.group(1)) if m else float("nan")
+def dual(pt):
+    # pt is the FULL point tag, e.g. "R2b48z_c48t" or "R2cZ_c48t_a" — the bench
+    # files are bench_<point>_p1.log / _p2.log. An earlier draft appended "_c48t"
+    # to tags that already carried it, which would have read a nonexistent file
+    # and printed nan for the layout and spec rows without failing loudly.
+    return sum(val(f"{pt}_p{i}", "Output token throughput") for i in (1, 2))
+b0 = val("FV0", "Output token throughput")
+b1 = val("FV1", "Output token throughput")
+b2 = val("FV2", "Output token throughput")
+layout = dual("R2b48z_c48t")
+spec   = dual("R2cZ_c48t_a")
+print("== FV four-factor chain, ALL on seed 0 (one pool) ==")
+print(f"  量化   bf16->fp8 w+kv : {b0:.2f} -> {b1:.2f}  {(b1-b0)/b0*100:+.2f}%")
+print(f"  调度   2048->8192     : {b1:.2f} -> {b2:.2f}  {(b2-b1)/b1*100:+.2f}%")
+print(f"  布局   TP2->2 replica : {b2:.2f} -> {layout:.2f}  {(layout-b2)/b2*100:+.2f}%")
+print(f"  投机   k=0 -> k=1     : {layout:.2f} -> {spec:.2f}  {(spec-layout)/layout*100:+.2f}%")
+prod = (b1/b0)*(b2/b1)*(layout/b2)*(spec/layout)
+print(f"  product {prod:.5f} vs end/start {spec/b0:.5f}  -> total {(spec-b0)/b0*100:+.2f}%")
+EOF
+fi
+
 # ---------- P9: R2c0 — same config as R2c, but seed 0 = sweep6's exact prompt set ----------
 # Two independent questions, one measurement:
 #   same-window A/B: R2c0(seed 0) vs R2c_c48t(seed 708/709) — differs ONLY in the
@@ -498,6 +876,57 @@ a, b = val(t1, "Output token throughput"), val(t2, "Output token throughput")
 d = abs(b - a) / a * 100
 print(f"== WINDOW CHECK {t1} vs {t2} ==\n{t1}={a:.2f} {t2}={b:.2f} drift={d:.2f}% -> " + ("VALID" if d <= 3 else "VOID (>3%)"))
 EOF
+fi
+
+# ---------- P14: R2cAB — the decisive seed A/B, ONE boot, back to back ----------
+# Why this exists. R2c_c48t (13:19, seeds 702/703) = 600.40, but R2c0 and
+# R2c0b (14:49 / 15:02, seed 0) = 652.98 / 651.60. Three suspects have already
+# been eliminated by data already on disk:
+#   * run-to-run variance — R2c0 vs R2c0b differ 0.21%;
+#   * host load — R2c0b ran at loadavg 15.10, HIGHER than the 9.22 blamed for
+#     the slow 600.40, and was still fast;
+#   * "seed 70x is a slow prompt pool" — R2b48_c48t_p2 ran seed 702 at k=0 and
+#     landed 274.03 against its seed-701 sibling's 275.52 (-0.54%), and
+#     R2c_c48t's own two replicas used DIFFERENT pools (702, 703) and agreed
+#     to 0.14%. A pool that is normal at k=0 and indistinguishable from a
+#     neighbouring pool cannot be what moves k=1 by 9%.
+# What survives is (a) a one-off on that single 13:19 k=1 run, or (b) an effect
+# specific to the k=1 × prompt-pool interaction that seed 0 happens to win.
+# Two bench_pair calls on ONE boot, ~40s apart, same server, same window, same
+# client namespace: the ONLY thing that differs is the seed. No anchor is
+# needed — the two points bracket each other, which is a tighter control than
+# any window check. FORCE_SEED=702 goes first so that if the second bench dies
+# the rarer datum is already on disk.
+if want R2cAB; then
+boot_replica 8341 1 $OUT/server_R2cAB_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2cAB_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2cAB pair up ($RC1/$RC2)"
+  startup_lines $OUT/server_R2cAB_1.log $OUT/server_R2cAB_2.log
+  FORCE_SEED=702 bench_pair R2cAB70_c48t 24 48 8341 2 $OUT/server_R2cAB_1.log $OUT/server_R2cAB_2.log
+  spec_metrics R2cAB70_c48t 8341 8342
+  FORCE_SEED=0   bench_pair R2cAB00_c48t 24 48 8341 2 $OUT/server_R2cAB_1.log $OUT/server_R2cAB_2.log
+  spec_metrics R2cAB00_c48t 8341 8342
+  # The spec counters are cumulative from server boot and the second snapshot
+  # therefore contains the first point's drafts too. Print the delta here so
+  # the per-point step count is on disk next to the throughput, not left as an
+  # arithmetic exercise for whoever reads the evidence later.
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import re, sys
+out = sys.argv[1]
+def tot(tag, key):
+    txt = open(f"{out}/specmetrics_{tag}_c48t.txt").read()
+    return sum(float(m) for m in re.findall(rf"^{key}\{{[^}}]*\}}\s+([0-9.e+]+)", txt, re.M))
+a = tot("R2cAB70", "vllm:spec_decode_num_drafts_total")
+b = tot("R2cAB00", "vllm:spec_decode_num_drafts_total")
+print(f"== R2cAB drafts (cumulative from boot) ==\nafter seed702={a:.0f} after seed0={b:.0f} -> seed0 own drafts={b-a:.0f}")
+EOF
+else
+  log "ABORT R2cAB boot failed"
+fi
+kill_srv $RC1; kill_srv $RC2
+log "R2cAB phase done"
+gpu_snap
 fi
 
 # ---------- P6 (opt-in): dynamic-k question — k=1 vs k=2 at @16total ----------

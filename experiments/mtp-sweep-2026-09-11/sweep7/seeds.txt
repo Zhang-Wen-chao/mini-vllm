@@ -1,0 +1,34 @@
+# authoritative tag -> client seed, EXTRACTED from each bench log's own
+# Namespace(... seed=N ...) header. Not inferred, not reconstructed from
+# invocation order: the value here is the one the client actually ran with.
+# 坑 21 context: SEED=700 was a script-level global, so every separate
+# invocation restarted numbering at 701 and cross-boot tags collided.
+# All collisions below are ACROSS boots (each phase boots a fresh server),
+# so no prompt pool was ever reused inside a single server's KV cache.
+# Every probe read Prefix cache hit rate: 0.0% (349/349 engine samples).
+#
+# tag                      seed
+B0_c16                     701
+B0_c48                     702
+B0p_c16                    701
+B0p_c48                    702
+B0pp_c48                   703
+B1_c16                     701
+B1_c48                     702
+B1b_c48                    701
+B1b_c96                    702
+B1c_c48                    701
+R2b48_c48t_p1              701
+R2b48_c48t_p2              702
+R2b_c120t_p1               708
+R2b_c120t_p2               709
+R2b_c144t_p1               710
+R2b_c144t_p2               711
+R2b_c96t_p1                706
+R2b_c96t_p2                707
+R2c0_c48t_p1               0
+R2c0_c48t_p2               0
+R2c_c48t_p1                702
+R2c_c48t_p2                703
+R2c_c72t_p1                704
+R2c_c72t_p2                705
