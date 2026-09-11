@@ -42,3 +42,47 @@ P99 TPOT (ms):                           122.29
 Mean ITL (ms):                           103.87    
 Median ITL (ms):                         62.22     
 P99 ITL (ms):                            644.54    
+== B1_c16 ==
+Maximum request concurrency: 16
+Successful requests:                     96        
+Failed requests:                         0         
+Maximum request concurrency:             16        
+Benchmark duration (s):                  74.31     
+Total input tokens:                      103339    
+Total generated tokens:                  24576     
+Request throughput (req/s):              1.29      
+Output token throughput (tok/s):         330.70    
+Peak output token throughput (tok/s):    545.00    
+Peak concurrent requests:                21.00     
+Total token throughput (tok/s):          1721.26   
+Mean TTFT (ms):                          1219.97   
+Median TTFT (ms):                        919.64    
+P99 TTFT (ms):                           4981.73   
+Mean TPOT (ms):                          43.57     
+Median TPOT (ms):                        44.39     
+P99 TPOT (ms):                           46.56     
+Mean ITL (ms):                           43.40     
+Median ITL (ms):                         30.31     
+P99 ITL (ms):                            306.94    
+== B1_c48 ==
+Maximum request concurrency: 48
+Successful requests:                     96        
+Failed requests:                         0         
+Maximum request concurrency:             48        
+Benchmark duration (s):                  50.36     
+Total input tokens:                      103325    
+Total generated tokens:                  24576     
+Request throughput (req/s):              1.91      
+Output token throughput (tok/s):         488.01    
+Peak output token throughput (tok/s):    1104.00   
+Peak concurrent requests:                53.00     
+Total token throughput (tok/s):          2539.75   
+Mean TTFT (ms):                          4265.53   
+Median TTFT (ms):                        957.81    
+P99 TTFT (ms):                           14666.97  
+Mean TPOT (ms):                          80.58     
+Median TPOT (ms):                        91.59     
+P99 TPOT (ms):                           93.73     
+Mean ITL (ms):                           80.26     
+Median ITL (ms):                         44.21     
+P99 ITL (ms):                            319.62    

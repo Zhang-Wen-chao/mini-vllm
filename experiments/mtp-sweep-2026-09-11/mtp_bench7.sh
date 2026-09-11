@@ -4,8 +4,9 @@
 # script second — the arm list here is a transcription of that document, not a
 # substitute for it.
 #
-# Window order (all one window): B0 -> B1 -> R2c -> R2b -> B0'
+# Window order (all one window): B0 -> B1 -> B1b -> R2c -> R2b -> B0'
 #   B0 and B0' bracket the window; |B0' - B0| > 3% voids the whole window.
+#   B1b is the amendment added after B1 exposed pitfall 19 (see below).
 #
 # Arms:
 #   B0   TP2 bf16 on GPU2+3, port 8343 — the baseline, historical flags.
@@ -160,11 +161,20 @@ engine_stats() { # $1 tag $2... server logs
 # "Available KV cache memory" / "Estimated CUDA graph memory" /
 # "model weights take" / "non-default args", which is why TP2's ledger was
 # missing and the four items never closed against 0.92 x 44.5 GiB.
+#
+# PITFALL 18 — the ledger's ONLY complete line is gpu_worker.py:804, and its
+# wording changed across versions: older vLLM says "model weights take X GiB",
+# 0.28.0 says "Actual usage is X GiB for consumed memory (weights + non-torch),
+# Y GiB for peak activation, and Z GiB for CUDAGraph memory". The first sweep7
+# run matched the OLD wording and therefore captured NO ledger line at all —
+# silently, with no error, into an evidence file that looked complete. The
+# numbers were sitting in server_<arm>.log the whole time. So: a missing ledger
+# item must be confirmed against the raw server log, never against summary.txt.
 startup_lines() { # $1... server logs
   for f in "$@"; do
     echo "--- $f" >> $OUT/server_startup_lines.txt
-    grep -aE "Available KV cache memory|Estimated CUDA graph memory|CUDA graph pool memory|GPU KV cache size|Maximum concurrency|model weights take|Peak torch memory|non-default args|quantization|Using .*Kernel|speculative|max_num_scheduled" "$f" \
-      | head -24 >> $OUT/server_startup_lines.txt
+    grep -aE "Available KV cache memory|Estimated CUDA graph memory|CUDA graph pool memory|GPU KV cache size|Maximum concurrency|consumed memory|peak activation|CUDAGraph memory|Model loading took|Graph capturing finished|model weights take|Peak torch memory|non-default args|equivalent to --gpu-memory-utilization|No available shared memory broadcast" "$f" \
+      | head -40 >> $OUT/server_startup_lines.txt
   done
 }
 
@@ -235,22 +245,23 @@ bench_single_sampled() { # $1 tag $2 conc $3 np $4 port $5 server log
   summarize_single $tag $OUT/bench_$tag.log
 }
 
-tp2_phase() { # $1 tag $2 gpu-pair $3 quant flags
-  local tag=$1 gpus=$2 qf=$3 pid
+tp2_phase() { # $1 tag $2 gpu-pair $3 quant flags $4 concurrency list (default "16 48")
+  local tag=$1 gpus=$2 qf=$3 concs=${4:-"16 48"} pid c
   boot_tp2 "$gpus" $OUT/server_$tag.log "$qf"
   pid=$LAST_PID
   if wait_up 8343; then
     log "$tag up (pid $pid)"
     startup_lines $OUT/server_$tag.log
-    # @16 MUST stay at 96 prompts. sweep1-5 measured every @16 point with
+    # Every point stays at 96 prompts: sweep1-5 measured every @16 with
     # `--num-prompts 96 --max-concurrency 16` (Total input tokens 103333 in all
-    # ten: A/M1/M2/A2/K2/C2/A3/C2b/C4/W4) — 6 waves, a steady-state reading.
-    # A 32-prompt version is 2 waves and ramp-dominated: it scored 237.07 where
-    # the 96-prompt protocol scores ~285. Sitting that 237 next to the ladder's
-    # 301.4 (single card) and 284.9 (TP2) would "show" that two cards lose badly
-    # to one — a conclusion manufactured entirely by the protocol change.
-    bench_single_sampled ${tag}_c16 16 96 8343 $OUT/server_$tag.log
-    bench_single_sampled ${tag}_c48 48 96 8343 $OUT/server_$tag.log
+    # ten arms), and the R2 arms' @96total used 96 prompts too — so 96 keeps the
+    # whole matrix on one prompt pool. B0 run #2 used 32 at @16 and landed at
+    # 237.07 vs 96's 239.61 (1.1%): at @16 the client concurrency, not the
+    # prompt count, sets the rate (see README pitfall 17). 96 is the convention,
+    # not a magic number — the point is that it is the SAME everywhere.
+    for c in $concs; do
+      bench_single_sampled ${tag}_c${c} $c 96 8343 $OUT/server_$tag.log
+    done
   else
     log "ABORT $tag boot failed"
   fi
@@ -265,7 +276,7 @@ tp2_phase() { # $1 tag $2 gpu-pair $3 quant flags
 # pre-registration says it means.
 #   PHASES=B0            bash mtp_bench7.sh   # just the baseline
 #   PHASES="B0 B1"       bash mtp_bench7.sh
-PHASES=${PHASES:-"B0 B1 R2c R2b B0p"}
+PHASES=${PHASES:-"B0 B1 B1b R2c R2b B0p"}
 want() { case " $PHASES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 log "sweep7 start: baseline fix + gain split + ceiling | PHASES=$PHASES"
@@ -276,6 +287,17 @@ if want B0; then tp2_phase B0 "2,3" ""; fi
 
 # ---------- P2: B1 拆因臂 (TP2 fp8 weights + fp8 KV, GPU2+3) ----------
 if want B1; then tp2_phase B1 "2,3" "--quantization fp8 --kv-cache-dtype fp8"; fi
+
+# ---------- P2b: B1b 桥接臂 (PITFALL 19) ----------
+# vLLM 0.28.0's default max_num_batched_tokens is context-keyed:
+# {LLM_CLASS: 8192, OPENAI_API_SERVER: 2048}. `vllm serve` = 2048, so B0 and B1
+# ran at 2048 while sweep6's replica arms passed 8192 EXPLICITLY — the +66%
+# headline spans a 4x prefill-step-cap difference that was never in the
+# fairness list. B1b adds the missing cell: same arm as B1 plus the flag, so
+# B1b vs R2b/R2c isolates LAYOUT at equal quant + equal cap.
+# @96 answers the other open question: B1 sat at only 13.6% KV usage @48, so its
+# 488 may be load-limited rather than ceiling-limited.
+if want B1b; then tp2_phase B1b "2,3" "--quantization fp8 --kv-cache-dtype fp8 --max-num-batched-tokens 8192" "48 96"; fi
 
 # ---------- P3: R2c k=1 pair (GPU1+2) ----------
 if want R2c; then
