@@ -106,6 +106,8 @@ gpu_snap() { echo "--- $(date +%H:%M:%S) loadavg=$(cut -d' ' -f1-3 /proc/loadavg
 # because the k=1 arms swing ~9% and the one high-load sample is the prime suspect.
 load_snap() { echo "$(date +%H:%M:%S) loadavg=$(cut -d' ' -f1-3 /proc/loadavg)" >> $OUT/loadavg_trace.txt; }
 
+declare -A BOOT_PID=()   # port -> pid we spawned; wait_up must ask about THIS pid
+
 wait_up() { # $1 port
   for i in $(seq 1 120); do
     sleep 10
@@ -120,12 +122,46 @@ wait_up() { # $1 port
     # waiting on a port nothing would ever bind. Check whether the process we
     # launched still exists (grace of 4 polls = 40s so the python start-up does
     # not count as death) and bail out immediately if it does not.
-    if [ "$i" -gt 4 ] && ! pgrep -f -- "--port $1 " > /dev/null 2>&1; then
-      log "wait_up $1: no process for this port after $((i*10))s — boot died (check server log for OOM)"
-      return 1
+    #
+    # PITFALL 26 — this check used to be `pgrep -f -- "--port $1 "`, which asks
+    # "does ANY process carry this port", not "is MY process alive". An orphaned
+    # server from an earlier run carries the same --port and answers /health
+    # perfectly, so the phase silently inherited a stale config (see port_precheck
+    # below). Ask about the pid we actually spawned.
+    if [ "$i" -gt 4 ]; then
+      local mine="${BOOT_PID[$1]:-}"
+      if [ -n "$mine" ]; then
+        kill -0 "$mine" 2>/dev/null || {
+          log "wait_up $1: our pid $mine died after $((i*10))s — boot failed (bind conflict or OOM; see server log)"
+          return 1; }
+      elif ! pgrep -f -- "--port $1 " > /dev/null 2>&1; then
+        log "wait_up $1: no process for this port after $((i*10))s — boot died (check server log for OOM)"
+        return 1
+      fi
     fi
   done
   return 1
+}
+
+# PITFALL 26 — a port that is already serving does not belong to us, and booting
+# onto it does NOT fail loudly. On 2026-09-11 an orphaned k=0 server (survived a
+# kill that orphaned it to ppid=1) held 8341 from 16:36 onward. Two phases in a
+# row booted "successfully" onto it: the new server died with
+# `OSError: [Errno 98] Address already in use` into a 40-line log, `wait_up`
+# returned 0 because the ORPHAN answered /health, and every request went to the
+# stale process. R2cZ spent its whole phase measuring a k=0 server while the
+# phase under test was k=1 — and the contamination was invisible for the exact
+# reason it mattered: the numbers looked plausible (274 tok/s/replica is a real
+# k=0 rate), only the *config* was wrong.
+# So: refuse to boot onto an occupied port, loudly, before spawning anything.
+port_precheck() { # $1 port
+  if curl -s --max-time 2 "http://127.0.0.1:$1/health" > /dev/null 2>&1; then
+    log "PORT_CONFLICT $1 already answering /health — refusing to boot onto it (stale server?)"
+    echo "$(date +%H:%M:%S) CONFLICT $1 busy" >> $OUT/port_conflict.txt
+    ps -eo pid,ppid,etime,args | grep -- "--port $1 " | grep -v grep >> $OUT/port_conflict.txt 2>/dev/null
+    return 1
+  fi
+  return 0
 }
 
 kill_srv() { # $1 pid
@@ -457,20 +493,24 @@ wait_gpus() { # $1 comma list, e.g. "1,2"
 }
 
 boot_replica() { # $1 port $2 gpu $3 logfile $4 extra flags
+  port_precheck "$1" || { LAST_PID=""; return 1; }
   wait_gpus "$2" || { LAST_PID=""; return 1; }
   setsid bash -c "CUDA_VISIBLE_DEVICES=$2 HF_HUB_OFFLINE=1 $VENV/vllm serve $MODEL \
     --port $1 --served-model-name qwen38-27b --max-model-len 8192 \
     --quantization fp8 --max-num-seqs 128 --kv-cache-dtype fp8 \
     --max-num-batched-tokens 8192 $4" > $3 2>&1 &
   LAST_PID=$!
+  BOOT_PID[$1]=$LAST_PID
 }
 
 boot_tp2() { # $1 gpu-pair $2 logfile $3 quant flags ("" = bf16 baseline)
+  port_precheck 8343 || { LAST_PID=""; return 1; }
   wait_gpus "$1" || { LAST_PID=""; return 1; }
   setsid bash -c "CUDA_VISIBLE_DEVICES=$1 HF_HUB_OFFLINE=1 $VENV/vllm serve $MODEL \
     --port 8343 --served-model-name qwen38-27b --max-model-len 8192 \
     --tensor-parallel-size 2 --max-num-seqs 128 $3" > $2 2>&1 &
   LAST_PID=$!
+  BOOT_PID[8343]=$LAST_PID
 }
 
 # bench_single_sampled: the TP2 path used to call bench_one bare and collect NO
