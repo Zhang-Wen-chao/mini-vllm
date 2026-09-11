@@ -77,6 +77,12 @@ log() { echo "$(date +%H:%M:%S) $*" >> $OUT/run.log; }
 gpu_snap() { echo "--- $(date +%H:%M:%S) loadavg=$(cut -d' ' -f1-3 /proc/loadavg)" >> $OUT/gpu_snapshots.txt
   nvidia-smi --query-gpu=index,memory.used,utilization.gpu,clocks.sm,power.draw,temperature.gpu --format=csv,noheader >> $OUT/gpu_snapshots.txt; }
 
+# load_snap — loadavg DURING the load, not just before/after it. gpu_snap only
+# brackets a bench point, so a neighbour that spikes for 30s mid-run is invisible
+# in it. Amendment 4 needs the loadavg that a point was actually measured AT,
+# because the k=1 arms swing ~9% and the one high-load sample is the prime suspect.
+load_snap() { echo "$(date +%H:%M:%S) loadavg=$(cut -d' ' -f1-3 /proc/loadavg)" >> $OUT/loadavg_trace.txt; }
+
 wait_up() { # $1 port
   for i in $(seq 1 120); do
     sleep 10
@@ -211,6 +217,7 @@ bench_pair() {
   for k in 1 2 3; do
     sleep 8
     engine_stats ${tag}_s$k "${logs[@]}"
+    load_snap
     kill -0 $bp 2>/dev/null || break
   done
   wait "${pids[@]}"
@@ -247,6 +254,7 @@ bench_single_sampled() { # $1 tag $2 conc $3 np $4 port $5 server log
   for k in 1 2 3; do
     sleep 8
     engine_stats ${tag}_s$k "$slog"
+    load_snap
     kill -0 $bp 2>/dev/null || break
   done
   wait $bp
@@ -285,7 +293,7 @@ tp2_phase() { # $1 tag $2 gpu-pair $3 quant flags $4 concurrency list (default "
 # pre-registration says it means.
 #   PHASES=B0            bash mtp_bench7.sh   # just the baseline
 #   PHASES="B0 B1"       bash mtp_bench7.sh
-PHASES=${PHASES:-"B0 B1 B1b R2c R2b B1c B0p R2b48 R2c0 B0pp"}
+PHASES=${PHASES:-"B0 B1 B1b R2c R2b B1c B0p R2b48 R2c0 B0pp R2c0b R2cH B0ppp"}
 want() { case " $PHASES " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
 log "sweep7 start: baseline fix + gain split + ceiling | PHASES=$PHASES"
@@ -421,6 +429,65 @@ fi
 if want B0pp && [ -s $OUT/bench_B0p_c48.log ]; then
 tp2_phase B0pp "2,3" "" "48"
 $VENV/python - "$OUT" "B0p" "B0pp" <<'EOF' >> $OUT/summary.txt
+import re, sys
+out, t1, t2 = sys.argv[1], sys.argv[2], sys.argv[3]
+def val(tag, key):
+    txt = open(f"{out}/bench_{tag}_c48.log").read()
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", txt)
+    return float(m.group(1)) if m else float("nan")
+a, b = val(t1, "Output token throughput"), val(t2, "Output token throughput")
+d = abs(b - a) / a * 100
+print(f"== WINDOW CHECK {t1} vs {t2} ==\n{t1}={a:.2f} {t2}={b:.2f} drift={d:.2f}% -> " + ("VALID" if d <= 3 else "VOID (>3%)"))
+EOF
+fi
+
+# ---------- P11: R2c0b — pure run-to-run variance of the k=1 path (amendment 4) ----------
+# Same window, same config, same boot params, same prompt set (seed 0) as R2c0.
+# Identical inputs, so ANY gap is run-to-run variance — the one thing the k=1
+# arms have never had measured. It also discriminates the two live hypotheses:
+# low gap => R2c_c48t's 600.40 was a load artifact; high gap => k=1 is simply
+# not reproducible to better than ~5% and the 投机 factor must be a RANGE.
+if want R2c0b; then
+boot_replica 8341 1 $OUT/server_R2c0b_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2c0b_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2c0b pair up ($RC1/$RC2)"
+  startup_lines $OUT/server_R2c0b_1.log $OUT/server_R2c0b_2.log
+  FORCE_SEED=0 bench_pair R2c0b_c48t 24 48 8341 2 $OUT/server_R2c0b_1.log $OUT/server_R2c0b_2.log
+  spec_metrics R2c0b_c48t 8341 8342
+else
+  log "ABORT R2c0b boot failed"
+fi
+kill_srv $RC1; kill_srv $RC2
+log "R2c0b phase done"
+gpu_snap
+fi
+
+# ---------- P12: R2cH — the k=1 lane bracket at k=0's exact lane counts ----------
+# R2b_c120t (60 lanes) = 682.96 and R2b_c144t (72 lanes) = 653.79 already exist.
+# Running k=1 at the SAME lanes makes the crossover a direct measurement instead
+# of a comparison across different lane counts, which is all we have now.
+if want R2cH; then
+boot_replica 8341 1 $OUT/server_R2cH_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 2 $OUT/server_R2cH_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+if wait_up 8341 && wait_up 8342; then
+  log "R2cH pair up ($RC1/$RC2)"
+  startup_lines $OUT/server_R2cH_1.log $OUT/server_R2cH_2.log
+  bench_pair R2cH_c120t 60 120 8341 2 $OUT/server_R2cH_1.log $OUT/server_R2cH_2.log
+  bench_pair R2cH_c144t 72 144 8341 2 $OUT/server_R2cH_1.log $OUT/server_R2cH_2.log
+  spec_metrics R2cH_c144t 8341 8342
+else
+  log "ABORT R2cH boot failed"
+fi
+kill_srv $RC1; kill_srv $RC2
+log "R2cH phase done"
+gpu_snap
+fi
+
+# ---------- P13: closing anchor B0''' for the amendment-4 window ----------
+if want B0ppp && [ -s $OUT/bench_B0pp_c48.log ]; then
+tp2_phase B0ppp "2,3" "" "48"
+$VENV/python - "$OUT" "B0pp" "B0ppp" <<'EOF' >> $OUT/summary.txt
 import re, sys
 out, t1, t2 = sys.argv[1], sys.argv[2], sys.argv[3]
 def val(tag, key):

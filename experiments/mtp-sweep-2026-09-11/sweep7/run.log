@@ -23,3 +23,11 @@
 14:41:43 B0p phase done
 14:41:43 ALL_DONE
 14:43:33 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2b48 R2c0 B0pp
+14:45:23 R2b48 pair up (137421/137422)
+14:46:37 R2b48 phase done
+14:48:28 R2c0 pair up (140505/140506)
+14:49:35 R2c0 phase done
+14:51:25 B0pp up (pid 143481)
+14:52:50 B0pp phase done
+14:52:50 ALL_DONE
+15:00:25 sweep7 start: baseline fix + gain split + ceiling | PHASES=R2c0b R2cH B0ppp
