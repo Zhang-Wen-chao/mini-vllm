@@ -6,3 +6,6 @@ __pycache__/
 *.qdstrm
 profile_*_decode.json
 profile_vllm_generate.json
+
+# stray TeX run artifacts (root of this repo is not a LaTeX project)
+texput.log
