@@ -186,3 +186,13 @@
 21:15:13 R2cZv pair up (244585/245733)
 21:26:16 Z5 phase done
 21:26:16 ALL_DONE
+21:34:29 sweep7 start: baseline fix + gain split + ceiling | PHASES=Z6
+21:34:29 GPUS_IDLE 1 — holding 10 polls before boot
+21:34:29 WAIT_GPU 1:idle-holding (poll 1)
+21:38:59 GPUS_FREE 1 after 9 polls (held 10)
+21:38:59 GPUS_IDLE 3 — holding 10 polls before boot
+21:38:59 WAIT_GPU 3:idle-holding (poll 1)
+21:43:30 GPUS_FREE 3 after 9 polls (held 10)
+21:45:10 R2cZ6 pair up (251744/252892)
+21:52:56 Z6 phase done
+21:52:56 ALL_DONE

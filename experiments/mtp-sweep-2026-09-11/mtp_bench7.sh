@@ -1249,6 +1249,108 @@ print("   nothing here revises any outward-facing number.")
 EOF
 fi
 
+# ---------- P25: Z6 — the position effect, tested on purpose ----------
+# The only failure mode that has bitten this project twice is POSITION, not
+# configuration. 发现 B claimed the first measurement point after boot reads
+# ~1.5% slow; Z2 falsified the general form and left a survivor -- "only the
+# first point at c48t" (2/2 boots) -- and Z5 then read its own discarded w0
+# point 0.90% below @120t at 60 lanes/rep: same direction, outside the
+# survivor's stated band. So the survivor has never been tested on purpose, and
+# it decides how every ladder in this README may be read ("positions aligned").
+#
+# Interleaving IS the design. n1 is the boot's ONLY first point, while n2 is the
+# @120t-SPECIFIC first point. Run @48t three times in a row instead and those two
+# are confounded -- you cannot tell "first point after boot" from "first point of
+# this shape". Seed is pinned to 0 across all six so position is the only
+# variable (坑 21: never move seed and position together).
+if want Z6; then
+  boot_replica 8341 $RPA $OUT/server_R2cZ6_1.log "--speculative-config '$SPEC1'"; Z61=$LAST_PID
+  boot_replica 8342 $RPB $OUT/server_R2cZ6_2.log "--speculative-config '$SPEC1'"; Z62=$LAST_PID
+  if wait_up 8341 && wait_up 8342; then
+    log "R2cZ6 pair up ($Z61/$Z62)"
+    startup_lines $OUT/server_R2cZ6_1.log $OUT/server_R2cZ6_2.log
+    FORCE_SEED=0 bench_pair R2cZ6_n1 24  48 8341 2 $OUT/server_R2cZ6_1.log $OUT/server_R2cZ6_2.log
+    FORCE_SEED=0 bench_pair R2cZ6_n2 60 120 8341 2 $OUT/server_R2cZ6_1.log $OUT/server_R2cZ6_2.log
+    FORCE_SEED=0 bench_pair R2cZ6_n3 24  48 8341 2 $OUT/server_R2cZ6_1.log $OUT/server_R2cZ6_2.log
+    FORCE_SEED=0 bench_pair R2cZ6_n4 60 120 8341 2 $OUT/server_R2cZ6_1.log $OUT/server_R2cZ6_2.log
+    FORCE_SEED=0 bench_pair R2cZ6_n5 24  48 8341 2 $OUT/server_R2cZ6_1.log $OUT/server_R2cZ6_2.log
+    FORCE_SEED=0 bench_pair R2cZ6_n6 60 120 8341 2 $OUT/server_R2cZ6_1.log $OUT/server_R2cZ6_2.log
+    spec_metrics R2cZ6_n3 8341 8342
+  else
+    log "ABORT R2cZ6 boot failed"
+  fi
+  kill_srv $Z61; kill_srv $Z62
+  gpu_snap
+  log "Z6 phase done"
+  # Q1-Q4 verdicts computed HERE from the README's pre-registered thresholds.
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import os, re, sys
+out = sys.argv[1]
+def g(f, key):
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
+    return float(m.group(1)) if m else float("nan")
+def rep(tag, i):
+    return g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput")
+def tot(tag):
+    return rep(tag, 1) + rep(tag, 2)
+def split(tag):
+    a, b = rep(tag, 1), rep(tag, 2)
+    if a != a or b != b or (a + b) == 0:
+        return float("nan")
+    return abs(a - b) / ((a + b) / 2) * 100
+TAGS = ["n1", "n2", "n3", "n4", "n5", "n6"]
+SHAPE = {"n1": "48t", "n2": "120t", "n3": "48t", "n4": "120t", "n5": "48t", "n6": "120t"}
+print("== Z6: the position effect, tested on purpose (single arm k=1, one boot, "
+      "interleaved shapes, seed pinned to 0) ==")
+_miss = [f"R2cZ6_{t}" for t in TAGS if tot(f"R2cZ6_{t}") != tot(f"R2cZ6_{t}")]
+print(f"  completeness: {'ALL SIX PRESENT' if not _miss else 'INCOMPLETE -> ' + ', '.join(_miss)}")
+for t in TAGS:
+    v, s = tot(f"R2cZ6_{t}"), split(f"R2cZ6_{t}")
+    if v != v:
+        print(f"     {t} (@{SHAPE[t]:<4}, pos {TAGS.index(t)+1})  MISSING"); continue
+    flag = "" if s != s or s <= 2.0 else "   <-- p1/p2 SPLIT OVER 2%"
+    print(f"     {t} (@{SHAPE[t]:<4}, pos {TAGS.index(t)+1})  total {v:8.2f}"
+          f"   p1 {rep('R2cZ6_'+t,1):8.2f}  p2 {rep('R2cZ6_'+t,2):8.2f}"
+          f"   split {s:5.2f}%{flag}")
+v = {t: tot(f"R2cZ6_{t}") for t in TAGS}
+print("== pre-registered verdicts ==")
+def pct(x, base):
+    return (base - x) / base * 100
+if v["n1"] == v["n1"] and v["n3"] == v["n3"] and v["n5"] == v["n5"]:
+    base = (v["n3"] + v["n5"]) / 2
+    d = pct(v["n1"], base)
+    print(f"   Q1 (@48t first point low by >=1%): {'CONFIRMED' if d >= 1.0 else 'FALSIFIED'}"
+          f"   [n1 {v['n1']:.2f} vs n3/n5 mean {base:.2f} = {d:+.2f}%; <1% kills 发现 B's survivor]")
+if v["n2"] == v["n2"] and v["n4"] == v["n4"] and v["n6"] == v["n6"]:
+    base = (v["n4"] + v["n6"]) / 2
+    d = pct(v["n2"], base)
+    verdict = "CONFIRMED" if d < 0.5 else ("FALSIFIED" if d >= 1.0 else "AMBIGUOUS (0.5-1%)")
+    print(f"   Q2 (@120t first point NOT low, <0.5%): {verdict}"
+          f"   [n2 {v['n2']:.2f} vs n4/n6 mean {base:.2f} = {d:+.2f}%; >=1% means the effect is GENERAL]")
+seq = [v[t] for t in TAGS]
+if all(x == x for x in seq):
+    mono = all(seq[i] < seq[i+1] for i in range(5))
+    print(f"   Q3 (not a global drift, i.e. n1..n6 NOT monotone rising): "
+          f"{'FALSIFIED' if mono else 'CONFIRMED'}   [sequence {', '.join(f'{x:.1f}' for x in seq)}]")
+    if mono:
+        print("      -> pure runtime drift; NO VERDICT on the position effect from this phase.")
+if v["n3"] == v["n3"] and v["n5"] == v["n5"] and v["n4"] == v["n4"] and v["n6"] == v["n6"]:
+    d35 = abs(v["n3"] - v["n5"]) / ((v["n3"] + v["n5"]) / 2) * 100
+    d46 = abs(v["n4"] - v["n6"]) / ((v["n4"] + v["n6"]) / 2) * 100
+    ok = d35 <= 0.5 and d46 <= 0.5
+    bad = d35 > 1.0 or d46 > 1.0
+    verdict = "CONFIRMED" if ok else ("FALSIFIED" if bad else "AMBIGUOUS (0.5-1%)")
+    print(f"   Q4 (noise floor below the effect: n3-vs-n5 and n4-vs-n6 both <=0.5%): {verdict}"
+          f"   [{d35:.2f}% / {d46:.2f}%]")
+    if bad:
+        print("      -> band noise floor >= effect size; the position question stays OPEN.")
+print("   NOTE: positions only. Nothing here revises any outward-facing number, and no")
+print("   rung other than c48t/c120t is in scope.")
+EOF
+fi
+
 # ---------- P20: FV — the whole four-factor chain on ONE seed ----------
 # The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
 # fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to

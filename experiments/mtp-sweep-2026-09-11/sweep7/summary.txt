@@ -3952,3 +3952,299 @@ Mean TPOT: p1=65.06 p2=65.00 MEAN=65.03
    [descriptive, no verdict] @126tb (3rd reading, position 6) = 652.84, split 0.40%
    NOTE: deep-overload band. A notch is structure, not an operating point;
    nothing here revises any outward-facing number.
+== SEED AUDIT 21:34:29 ==
+  alias seed 702  ->  B0_c48 B0p_c48 B1_c48 B1b_c96 R2b48_c48t_p2 R2c_c48t_p1
+  alias seed 703  ->  B0pp_c48 R2c_c48t_p2
+  alias seed 0    ->  R2c0_c48t_p1 R2c0_c48t_p2 R2c0b_c48t_p1 R2c0b_c48t_p2 R2cAB00_c48t_p1 R2cAB00_c48t_p2
+  alias seed 701  ->  B0_c16 B0p_c16 B1_c16 B1b_c48 B1c_c48 R2b48_c48t_p1
+== R2cZ6_n1 (x2 replicas, TOTAL) ==
+Maximum request concurrency: 24
+Successful requests:                     48        
+Failed requests:                         0         
+Maximum request concurrency:             24        
+Benchmark duration (s):                  37.73     
+Total input tokens:                      51668     
+Total generated tokens:                  12288     
+Request throughput (req/s):              1.27      
+Output token throughput (tok/s):         325.67    
+Peak output token throughput (tok/s):    336.00    
+Peak concurrent requests:                30.00     
+Total token throughput (tok/s):          1695.04   
+Mean TTFT (ms):                          3937.59   
+Median TTFT (ms):                        2518.79   
+P99 TTFT (ms):                           8425.81   
+Mean TPOT (ms):                          56.24     
+Median TPOT (ms):                        56.31     
+P99 TPOT (ms):                           83.08     
+Mean ITL (ms):                           101.31    
+Median ITL (ms):                         73.54     
+P99 ITL (ms):                            649.08    
+Maximum request concurrency: 24
+Successful requests:                     48        
+Failed requests:                         0         
+Maximum request concurrency:             24        
+Benchmark duration (s):                  37.47     
+Total input tokens:                      51668     
+Total generated tokens:                  12288     
+Request throughput (req/s):              1.28      
+Output token throughput (tok/s):         327.90    
+Peak output token throughput (tok/s):    336.00    
+Peak concurrent requests:                28.00     
+Total token throughput (tok/s):          1706.64   
+Mean TTFT (ms):                          3925.06   
+Median TTFT (ms):                        2415.78   
+P99 TTFT (ms):                           8418.24   
+Mean TPOT (ms):                          56.23     
+Median TPOT (ms):                        57.21     
+P99 TPOT (ms):                           82.17     
+Mean ITL (ms):                           101.34    
+Median ITL (ms):                         73.52     
+P99 ITL (ms):                            685.29    
+Output token throughput: p1=325.67 p2=327.90 TOTAL=653.57
+Mean TTFT: p1=3937.59 p2=3925.06 MEAN=3931.32
+Mean TPOT: p1=56.24 p2=56.23 MEAN=56.23
+== R2cZ6_n2 (x2 replicas, TOTAL) ==
+Maximum request concurrency: 60
+Successful requests:                     120       
+Failed requests:                         0         
+Maximum request concurrency:             60        
+Benchmark duration (s):                  91.60     
+Total input tokens:                      129167    
+Total generated tokens:                  30720     
+Request throughput (req/s):              1.31      
+Output token throughput (tok/s):         335.36    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                65.00     
+Total token throughput (tok/s):          1745.42   
+Mean TTFT (ms):                          23127.78  
+Median TTFT (ms):                        23923.84  
+P99 TTFT (ms):                           39672.54  
+Mean TPOT (ms):                          63.44     
+Median TPOT (ms):                        62.95     
+P99 TPOT (ms):                           84.58     
+Mean ITL (ms):                           113.70    
+Median ITL (ms):                         73.54     
+P99 ITL (ms):                            649.64    
+Maximum request concurrency: 60
+Successful requests:                     120       
+Failed requests:                         0         
+Maximum request concurrency:             60        
+Benchmark duration (s):                  91.72     
+Total input tokens:                      129167    
+Total generated tokens:                  30720     
+Request throughput (req/s):              1.31      
+Output token throughput (tok/s):         334.95    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                64.00     
+Total token throughput (tok/s):          1743.29   
+Mean TTFT (ms):                          23067.55  
+Median TTFT (ms):                        23623.98  
+P99 TTFT (ms):                           40081.49  
+Mean TPOT (ms):                          63.24     
+Median TPOT (ms):                        64.09     
+P99 TPOT (ms):                           85.41     
+Mean ITL (ms):                           113.85    
+Median ITL (ms):                         73.55     
+P99 ITL (ms):                            684.09    
+Output token throughput: p1=335.36 p2=334.95 TOTAL=670.31
+Mean TTFT: p1=23127.78 p2=23067.55 MEAN=23097.67
+Mean TPOT: p1=63.44 p2=63.24 MEAN=63.34
+== R2cZ6_n3 (x2 replicas, TOTAL) ==
+Maximum request concurrency: 24
+Successful requests:                     48        
+Failed requests:                         0         
+Maximum request concurrency:             24        
+Benchmark duration (s):                  37.07     
+Total input tokens:                      51668     
+Total generated tokens:                  12288     
+Request throughput (req/s):              1.29      
+Output token throughput (tok/s):         331.47    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                30.00     
+Total token throughput (tok/s):          1725.22   
+Mean TTFT (ms):                          3713.63   
+Median TTFT (ms):                        1885.26   
+P99 TTFT (ms):                           8023.41   
+Mean TPOT (ms):                          56.27     
+Median TPOT (ms):                        57.18     
+P99 TPOT (ms):                           82.19     
+Mean ITL (ms):                           101.41    
+Median ITL (ms):                         73.50     
+P99 ITL (ms):                            685.83    
+Maximum request concurrency: 24
+Successful requests:                     48        
+Failed requests:                         0         
+Maximum request concurrency:             24        
+Benchmark duration (s):                  37.11     
+Total input tokens:                      51668     
+Total generated tokens:                  12288     
+Request throughput (req/s):              1.29      
+Output token throughput (tok/s):         331.12    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                30.00     
+Total token throughput (tok/s):          1723.37   
+Mean TTFT (ms):                          3677.81   
+Median TTFT (ms):                        1914.02   
+P99 TTFT (ms):                           8040.45   
+Mean TPOT (ms):                          56.51     
+Median TPOT (ms):                        55.97     
+P99 TPOT (ms):                           81.73     
+Mean ITL (ms):                           101.80    
+Median ITL (ms):                         73.50     
+P99 ITL (ms):                            566.09    
+Output token throughput: p1=331.47 p2=331.12 TOTAL=662.59
+Mean TTFT: p1=3713.63 p2=3677.81 MEAN=3695.72
+Mean TPOT: p1=56.27 p2=56.51 MEAN=56.39
+== R2cZ6_n4 (x2 replicas, TOTAL) ==
+Maximum request concurrency: 60
+Successful requests:                     120       
+Failed requests:                         0         
+Maximum request concurrency:             60        
+Benchmark duration (s):                  91.77     
+Total input tokens:                      129167    
+Total generated tokens:                  30720     
+Request throughput (req/s):              1.31      
+Output token throughput (tok/s):         334.75    
+Peak output token throughput (tok/s):    336.00    
+Peak concurrent requests:                64.00     
+Total token throughput (tok/s):          1742.25   
+Mean TTFT (ms):                          23141.08  
+Median TTFT (ms):                        23972.95  
+P99 TTFT (ms):                           39870.58  
+Mean TPOT (ms):                          63.37     
+Median TPOT (ms):                        64.08     
+P99 TPOT (ms):                           85.17     
+Mean ITL (ms):                           114.03    
+Median ITL (ms):                         73.59     
+P99 ITL (ms):                            645.56    
+Maximum request concurrency: 60
+Successful requests:                     120       
+Failed requests:                         0         
+Maximum request concurrency:             60        
+Benchmark duration (s):                  91.44     
+Total input tokens:                      129167    
+Total generated tokens:                  30720     
+Request throughput (req/s):              1.31      
+Output token throughput (tok/s):         335.94    
+Peak output token throughput (tok/s):    337.00    
+Peak concurrent requests:                66.00     
+Total token throughput (tok/s):          1748.47   
+Mean TTFT (ms):                          23140.96  
+Median TTFT (ms):                        23736.99  
+P99 TTFT (ms):                           40566.55  
+Mean TPOT (ms):                          63.25     
+Median TPOT (ms):                        63.25     
+P99 TPOT (ms):                           86.26     
+Mean ITL (ms):                           113.51    
+Median ITL (ms):                         73.55     
+P99 ITL (ms):                            650.38    
+Output token throughput: p1=334.75 p2=335.94 TOTAL=670.69
+Mean TTFT: p1=23141.08 p2=23140.96 MEAN=23141.02
+Mean TPOT: p1=63.37 p2=63.25 MEAN=63.31
+== R2cZ6_n5 (x2 replicas, TOTAL) ==
+Maximum request concurrency: 24
+Successful requests:                     48        
+Failed requests:                         0         
+Maximum request concurrency:             24        
+Benchmark duration (s):                  37.07     
+Total input tokens:                      51668     
+Total generated tokens:                  12288     
+Request throughput (req/s):              1.29      
+Output token throughput (tok/s):         331.45    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                30.00     
+Total token throughput (tok/s):          1725.13   
+Mean TTFT (ms):                          3706.80   
+Median TTFT (ms):                        1880.91   
+P99 TTFT (ms):                           8011.24   
+Mean TPOT (ms):                          56.30     
+Median TPOT (ms):                        57.22     
+P99 TPOT (ms):                           82.17     
+Mean ITL (ms):                           101.47    
+Median ITL (ms):                         73.57     
+P99 ITL (ms):                            685.30    
+Maximum request concurrency: 24
+Successful requests:                     48        
+Failed requests:                         0         
+Maximum request concurrency:             24        
+Benchmark duration (s):                  37.09     
+Total input tokens:                      51668     
+Total generated tokens:                  12288     
+Request throughput (req/s):              1.29      
+Output token throughput (tok/s):         331.32    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                28.00     
+Total token throughput (tok/s):          1724.44   
+Mean TTFT (ms):                          3670.69   
+Median TTFT (ms):                        1882.87   
+P99 TTFT (ms):                           8021.83   
+Mean TPOT (ms):                          56.28     
+Median TPOT (ms):                        55.94     
+P99 TPOT (ms):                           83.95     
+Mean ITL (ms):                           101.89    
+Median ITL (ms):                         73.54     
+P99 ITL (ms):                            630.09    
+Output token throughput: p1=331.45 p2=331.32 TOTAL=662.77
+Mean TTFT: p1=3706.80 p2=3670.69 MEAN=3688.74
+Mean TPOT: p1=56.30 p2=56.28 MEAN=56.29
+== R2cZ6_n6 (x2 replicas, TOTAL) ==
+Maximum request concurrency: 60
+Successful requests:                     120       
+Failed requests:                         0         
+Maximum request concurrency:             60        
+Benchmark duration (s):                  91.63     
+Total input tokens:                      129167    
+Total generated tokens:                  30720     
+Request throughput (req/s):              1.31      
+Output token throughput (tok/s):         335.24    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                66.00     
+Total token throughput (tok/s):          1744.83   
+Mean TTFT (ms):                          23196.43  
+Median TTFT (ms):                        23866.58  
+P99 TTFT (ms):                           40068.94  
+Mean TPOT (ms):                          63.26     
+Median TPOT (ms):                        62.77     
+P99 TPOT (ms):                           86.20     
+Mean ITL (ms):                           113.54    
+Median ITL (ms):                         73.61     
+P99 ITL (ms):                            648.72    
+Maximum request concurrency: 60
+Successful requests:                     120       
+Failed requests:                         0         
+Maximum request concurrency:             60        
+Benchmark duration (s):                  92.14     
+Total input tokens:                      129167    
+Total generated tokens:                  30720     
+Request throughput (req/s):              1.30      
+Output token throughput (tok/s):         333.42    
+Peak output token throughput (tok/s):    338.00    
+Peak concurrent requests:                66.00     
+Total token throughput (tok/s):          1735.31   
+Mean TTFT (ms):                          23134.20  
+Median TTFT (ms):                        24034.79  
+P99 TTFT (ms):                           40244.28  
+Mean TPOT (ms):                          63.26     
+Median TPOT (ms):                        63.78     
+P99 TPOT (ms):                           85.01     
+Mean ITL (ms):                           113.81    
+Median ITL (ms):                         73.54     
+P99 ITL (ms):                            650.21    
+Output token throughput: p1=335.24 p2=333.42 TOTAL=668.66
+Mean TTFT: p1=23196.43 p2=23134.20 MEAN=23165.32
+Mean TPOT: p1=63.26 p2=63.26 MEAN=63.26
+== Z6: the position effect, tested on purpose (single arm k=1, one boot, interleaved shapes, seed pinned to 0) ==
+  completeness: ALL SIX PRESENT
+     n1 (@48t , pos 1)  total   653.57   p1   325.67  p2   327.90   split  0.68%
+     n2 (@120t, pos 2)  total   670.31   p1   335.36  p2   334.95   split  0.12%
+     n3 (@48t , pos 3)  total   662.59   p1   331.47  p2   331.12   split  0.11%
+     n4 (@120t, pos 4)  total   670.69   p1   334.75  p2   335.94   split  0.35%
+     n5 (@48t , pos 5)  total   662.77   p1   331.45  p2   331.32   split  0.04%
+     n6 (@120t, pos 6)  total   668.66   p1   335.24  p2   333.42   split  0.54%
+== pre-registered verdicts ==
+   Q1 (@48t first point low by >=1%): CONFIRMED   [n1 653.57 vs n3/n5 mean 662.68 = +1.37%; <1% kills 发现 B's survivor]
+   Q2 (@120t first point NOT low, <0.5%): CONFIRMED   [n2 670.31 vs n4/n6 mean 669.68 = -0.09%; >=1% means the effect is GENERAL]
+   Q3 (not a global drift, i.e. n1..n6 NOT monotone rising): CONFIRMED   [sequence 653.6, 670.3, 662.6, 670.7, 662.8, 668.7]
+   Q4 (noise floor below the effect: n3-vs-n5 and n4-vs-n6 both <=0.5%): CONFIRMED   [0.03% / 0.30%]
+   NOTE: positions only. Nothing here revises any outward-facing number, and no
+   rung other than c48t/c120t is in scope.
