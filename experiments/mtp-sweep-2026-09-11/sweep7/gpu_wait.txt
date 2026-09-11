@@ -119,3 +119,27 @@
 2, 295 MiB
 3, 295 MiB
 18:56:53 FREE 3 waited 270s held 10x30s
+19:21:44 busy 1:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+19:26:14 FREE 1 waited 270s held 10x30s
+19:26:14 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+19:30:45 FREE 3 waited 270s held 10x30s
+19:45:10 busy 1:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+19:49:41 FREE 1 waited 270s held 10x30s
+19:49:41 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+19:54:11 FREE 3 waited 270s held 10x30s
