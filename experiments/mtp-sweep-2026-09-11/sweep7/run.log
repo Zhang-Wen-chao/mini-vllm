@@ -1,0 +1,5 @@
+12:27:12 sweep7 start: baseline fix + gain split + ceiling | PHASES=B0
+12:29:02 B0 up (pid 111519)
+12:32:20 B0 phase done
+12:32:20 ALL_DONE
+12:34:08 sweep7 start: baseline fix + gain split + ceiling | PHASES=B1

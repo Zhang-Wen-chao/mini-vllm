@@ -480,6 +480,65 @@ MTP k=3（接受率与块税双输）、TP4（PCIe 无 NVLink，TP2 已证通信
 每点 3 次；④新增 B1 臂与 B0-16 补测；⑤4 卡相位改 opt-in（`RUN_4CARD=1`）——
 基线是两张卡，4 卡不参与基线对比。
 
+### B0 结果（2026-09-11 12:27:12–12:32:20 容器 UTC，本次实跑）：**锚点复现，@16 预测落空**
+
+服务端 non-default args 与 sweep6 的 TP2 臂**逐位相同**（`max_model_len 8192` /
+`tensor_parallel_size 2` / `max_num_seqs 128` / 无 `quantization`，vLLM 0.28.0 stock）；
+邻座条件也相同（GPU0 43.8GB 外部作业 + GPU1-3 各 284MB 足迹），所以这一行的
+跨窗比较成立。证据 `sweep7/`。
+
+| 指标 | B0 @16 | B0 @48 | sweep6 TP2 @48 | B0@48 vs sweep6 |
+|---|---|---|---|---|
+| Output token throughput (tok/s) | 239.61 | **375.09** | 372.07 | **+0.81%** |
+| Benchmark duration (s) | 102.57 | 65.52 | 66.05 | |
+| Successful / Failed | 96 / 0 | 96 / 0 | 96 / 0 | |
+| Total input / generated tokens | 103339 / 24576 | 103325 / 24576 | 103333 / 24576 | |
+| Request throughput (req/s) | 0.94 | 1.47 | 1.45 | |
+| Peak output tok/s | 368.00 | 816.00 | 816.00 | 逐位相同 |
+| Peak concurrent requests | 23.00 | 52.00 | 54.00 | |
+| Mean / Median / P99 TTFT (ms) | 2232.06 / 2172.78 / 6016.44 | 5802.17 / 2280.42 / 17680.08 | 6098.02 / 2270.61 / 18261.93 | |
+| Mean / Median / P99 TPOT (ms) | 58.15 / 58.17 / 63.85 | 104.28 / 116.35 / 122.29 | 104.16 / 116.24 / 122.70 | 细节级吻合 |
+| Mean / Median / P99 ITL (ms) | 57.93 / 45.29 / 624.37 | 103.87 / 62.22 / 644.54 | 103.75 / 62.27 / 641.57 | 细节级吻合 |
+
+**锚点复现**：375.09 vs 372.07 = **+0.81%**（判据 3%）。而且本窗跑了两次独立 boot
+（#2 那次 @16 用了 32 条，@48 未受其影响）——两次 @48 = 374.96 / 375.09，
+**两次 boot 相差 0.03%**；Median TPOT 116.35 vs 116.24、Mean ITL 103.87 vs 103.75、
+Peak output 816.00 逐位相同。这是本线第一次拿到同配置的**两 boot 重复性**。
+
+**污染已消除**：8 个 engine_stats 采样（@16 ×3、@48 ×3，另 @16 的 s1 在首个 8s
+窗口内引擎还没打印）里 `Prefix cache hit rate` **全为 0.0%**；口径字段现在随
+`bench_*.log` 的客户端 Namespace 一起入库，可反查：
+`seed=701/702`（每点独立）、`num_prompts=96`、`max_concurrency=16/48`、
+`random_input_len=1024`、`random_output_len=256`、`temperature=0.0`、
+`request_rate=inf`、`num_warmups=0`、`backend=openai-chat`。
+
+**台账闭合**（sweep6 缺的那四项，本次采到）：`Available KV cache memory 13.12 GiB`
+（sweep6 13.11）、`GPU KV cache size 264,071 tokens / 32.24x`（与 sweep6 逐位相同）、
+`Estimated CUDA graph memory 0.61 GiB` → `actual 0.6 GiB（差 3.0%）`、
+`dtype=torch.bfloat16 / quantization=None / kv_cache_dtype=auto`。
+
+**@16 预注册预测落空**（§7 预测 270-310，实测 **239.61**），落空的方向也和预注册
+的理由相反（预测说"可能同向偏高"，实际比 284.9 低 15.9%）。机制本次才看清：
+**@16 是客户端并发受限点，不是引擎饱和点**——全程 `Running: 16 / Waiting: 0 /
+KV usage: 14.6%`，`--max-concurrency 16` 把在飞请求钉死在 16。96 条的 duration
+102.57s 恰是 32 条（34.56s）的 **2.97 倍**，而速率 239.61 vs 237.07 只差 **1.1%**：
+**在客户端受限点上，`--num-prompts` 只改时长、不改速率**。
+
+对 §0 的影响（**结论：修不了，只能撤下或标注**）：09-06 那行不是"条数不对"能解释的。
+而且方向自相矛盾——同一批 09-06 ABBA 的 @48 = 350.2，本窗 @48 = 375.09（**+7.1%**）；
+@16 则是 284.9 → 239.61（**−15.9%**）。一高一低不同向，"机器快慢"解释不了，仓库里
+也查不到 09-06 那行的口径字段（文档缺口，见坑 17c）。**本窗自洽的基线是
+@16 = 239.61 / @48 = 375.09**；头条比例用同窗重算：618.8 / 375.09 = **+65.0%**。
+
+**本次没测到 / 没测全的**（下一相位前先看这段）：
+
+1. **负载中的 GPU 利用率没采到**——`gpu_snap` 只在相位端点触发，相位两头都空闲，
+   所以 `utilization.gpu` 恒 0%（功耗 218-224W、61°C 倒是把负载痕迹带上了，但滞后）。
+   修法：3 次引擎态采样的同一个循环里插一次 `gpu_snap`。
+2. **曲线中段无点**：@16 与 @48 之间（如 @32）没有读数，两卡基线只能给两端。
+3. 每点 3 次引擎态只覆盖 102s / 65s 里的 24s，且 @16 的 s1 落在引擎打印之前。
+4. **B0' 还没跑**，窗口首尾判据（§7 的 >3% 作废）尚未兑现。
+
 ## 复现
 
 ### sweep7 运行手册（命令、相位、证据落点）
@@ -613,6 +672,45 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
    创建时间 + 名字里有没有本线的标识，拿不准就归 (c)。
    **搬迁同理**：本线的模型目录可以移到共享盘再留软链（路径零改动、可逆），
    别人的模型目录即使腾出的空间更多也不动。
+16. **`--dataset-name random` 在固定 seed 下是确定性的，同一个 boot 里跑多个
+   bench 点会让后跑的点吃到先跑点的前缀缓存**。`vllm bench serve` 的 `--seed`
+   默认 `0`（`serve.py:1968` 全局 `np.random.seed(args.seed)`，`datasets.py:2406`
+   把 `args.seed` 传给 `RandomDataset(random_seed=...)`，类内
+   `np.random.default_rng(random_seed)`）——**同样的 seed + 同样的
+   `--random-input-len`，先生成的 prompt 逐 token 相同**。所以 conc 48 跑 96 条
+   时，前 32 条与同 boot 里先前 conc 16 跑 32 条的那批完全一样：
+   32/96 = **33.3%** 的请求整段命中前缀缓存。
+   本次实测（B0 首跑）：`@16` 全程 `Prefix cache hit rate: 0.0%`，紧接着的 `@48`
+   是 **29.1–32.4%**；Median TPOT 因此从 sweep6 同配置的 116.24ms 掉到 88.19ms，
+   吞吐 425.69 vs 锚点 372.07（**+14.4%**）。而服务端 flags、KV 池
+   （264,071 tok / 32.24x）、KV usage（43.9%）、客户端 108 个命名空间键**全部
+   逐位相同**——只看配置会误判成"机器变快了"。
+   **检测方法**：比对 engine log 里的 `Prefix cache hit rate`；每个 bench 点的
+   第一个采样必须是 0.0%，否则该点已污染。**修法**：每个 bench 点给独立
+   `--seed`，让 prompt 池互不重叠，顺序就彻底无关（换顺序只是把污染挪到别的点）。
+   **回看 sweep6**：TP2 的 `@48` 是整窗第一个 bench（干净），`@96`（469.62）被
+   `@48` 污染；`R2b @48t` 干净、`@96t`（622.74）被污染。**头条
+   `R2c @48t = 618.8` 与 `TP2 @48 = 372.07` 都是各自 boot 的第一个 bench，
+   两个都干净，+66% 的对比本身没塌。**
+17. **引用「@16 / @48」这类口径名之前，先分清这个点是「客户端受限」还是
+   「引擎饱和」——这比钉 `--num-prompts` 更要紧**。
+   **(a) 实测（本窗 B0，两 boot）**：@16 是**客户端受限**点，全程
+   `Running: 16 / Waiting: 0 / KV usage: 14.6%`，`--max-concurrency 16` 把在飞
+   请求钉死在 16。`--num-prompts` 96 条的 duration 102.57s 恰是 32 条（34.56s）
+   的 **2.97 倍**，而速率只差 **1.1%**（239.61 vs 237.07）——**在客户端受限点上
+   条数只改时长、不改速率**。
+   **(b) 由此作废一条旧推断**：我曾把 09-06 的 @16 = 284.9 归因于"32 条被 ramp
+   主导"（见修正轨迹 6），并据此预注册 B0-16 ≈ 270-310；实测 239.61，**假设
+   证伪**。真因不在条数，但也不在"机器快慢"：同批 09-06 ABBA 的 @48 = 350.2 →
+   本窗 375.09（**+7.1%**），@16 却是 284.9 → 239.61（**−15.9%**），一高一低
+   不同向。**处理方式不是猜，是标注**：那些数字在仓库里查不到口径字段，
+   §0 的跨窗那一行应当撤下或显式标"未复现"。
+   **(c) 纪律**：跨窗/跨轮引用前，从 `bench_*.log` 的客户端 Namespace 反查
+   `num_prompts` / `max_concurrency` / `request_rate` / `random_input_len` /
+   `random_output_len` / `temperature` / `backend` / `seed`，少一样都不可比
+   （本窗起这条 Namespace 随 bench log 一起入库，就是为了以后不必再猜）。
+   **(d) 用法**：@16 这类客户端受限点只能当**延迟参考**（TTFT/TPOT 分布），
+   不能当容量读数；拿它的吞吐去横比其他配置会造出假结论。
 
 ## 文件清单
 
@@ -642,8 +740,13 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
 | `sweep5/` | W4 全套：summary/bench×2/engine_stats×2/specmetrics×2/greedy/startup_lines/**ceval_W4.log**（路径脱敏同上） |
 | `mtp_bench6.sh` | sweep6 编排：TP2 锚点 + R2b/R2c/R2a 副本对四相（docstring 含臂设计与邻座条件） |
 | `sweep6/` | 2 卡部署矩阵全套：summary（含 nan bug 现场）/bench×10/engine_stats×4/startup_lines（池打印 129,706 vs 历史 136,533 的邻座足迹证据）/gpu_snapshots×5/specmetrics×2 |
+| `sweep7/` | 本窗证据：B0 `bench_B0_c16/c48.log`（**含客户端 Namespace 口径字段**，坑 17c）/ engine_stats_B0_c{16,48}_s{1,2,3}（7 份，prefix 恒 0.0%）/ server_startup_lines（四项台账闭合）/ gpu_snapshots / run.log / summary.txt |
 
 对照记录：TP2 bf16 基线数字来自部署实验同窗 ABBA（@16 284.9±6.5 / @48 350.2±3.3）。
+**⚠️ 这两行跨窗引用前先读坑 17**：本窗重测为 @16 239.61 / @48 375.09，@16 差
+−15.9%、@48 差 +7.1% 方向相反，且 09-06 那轮的口径字段（`--num-prompts` /
+`--request-rate` / `--random-input-len`）仓库里没有记录 → **跨窗那一行未复现，
+不要与 sweep6/sweep7 的数字并列做表**。
 
 ## 修正轨迹（归因的自我纠错）
 
@@ -661,3 +764,12 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
    W8A8 dynamic（bf16 checkpoint 在线压 fp8，激活动态量化），整条阶梯
    一直跑在 fp8 GEMM 上，TPOT 46.3ms 已是这套内核栈的 fp8 速度顶。
    教训：给自己开「新牌」前先对一遍已有臂的 serve 标志位。
+6. **「@16 条数 = 波数，波数少就被 ramp 主导」→ 实测证伪**（2026-09-11，
+   B0 跑完后修）：sweep6 → sweep7 之间，我把 B0 首跑 @48 的 +14.4% 异常归因到
+   坑 16（seed 复用前缀缓存）——那部分成立；但顺手把 09-06 的 @16 = 284.9
+   归因成"那轮用了 32 条、2 波、被 ramp 主导"，并据此写出坑 17、预注册
+   B0-16 ≈ 270-310。实测 96 条版 **239.61**、32 条版 **237.07**，差 **1.1%**
+   ——**归因错了**。真相是 @16 为客户端并发受限点，条数只改时长（3 倍），
+   不改速率。教训：两个数字对不上时，"找到一个会改变结果的变量"不等于"找到了
+   原因"——**这个变量必须能在本机被单独测一次**（96 条 vs 32 条各跑一次的成本
+   只有 2 分钟），拿跨窗数字反推原因等于用未知解释未知。已按此重写坑 17。
