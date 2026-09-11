@@ -482,19 +482,63 @@ MTP k=3（接受率与块税双输）、TP4（PCIe 无 NVLink，TP2 已证通信
 
 ## 复现
 
-~~~bash
-# 每臂（脚本内含全部参数；ARM/SPEC 由脚本轮转）：
-CUDA_VISIBLE_DEVICES=3 HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
-  --port 8331 --served-model-name qwen38-27b --max-model-len 8192 \
-  --quantization fp8 --max-num-seqs 128 \
-  [--kv-cache-dtype fp8] [--speculative-config '{"method":"mtp","num_speculative_tokens":2}']
+### sweep7 运行手册（命令、相位、证据落点）
 
+**一条命令 = 一臂。** 协议是「一次一个实验、记录完整、分析后回想遗漏，再决定下一步」，
+所以脚本有相位闸门；**不设 `PHASES` 时仍是预注册的完整窗口**（`B0 B1 R2c R2b B0p`），
+脚本的默认行为与预注册文档永远一致。
+（下文的 `<root>` = 远端放脚本的工作目录，`<nvme-root>` = 缓存与证据落点，
+`<venv>` / `<model-dir>` 同前。）
+
+~~~bash
+# 只跑基线臂（本次这么跑的）：
+cd <root> && PHASES=B0 setsid nohup bash <root>/mtp_bench7.sh \
+  > <root>/mtp7_run.log 2>&1 < /dev/null &
+
+# 下一臂（分析完再决定跑哪几个）：
+cd <root> && PHASES=B1   setsid nohup bash <root>/mtp_bench7.sh > <root>/mtp7_run.log 2>&1 < /dev/null &
+PHASES="R2c R2b"         setsid nohup bash <root>/mtp_bench7.sh > <root>/mtp7_run.log 2>&1 < /dev/null &
+# 全窗口 + 可选相位：
+PHASES="B0 B1 R2c R2b B0p" RUN_EXTRA=1 RUN_4CARD=1 bash <root>/mtp_bench7.sh
+~~~
+
+**证据落点**（全部落在 <nvme-root>，不占容器 overlay，见坑 14）：
+
+| 文件 | 内容 |
+| --- | --- |
+| `<out-dir-7>/run.log` | 时间线（**容器 UTC**，坑 3） |
+| `<out-dir-7>/server_<arm>.log` | 每臂完整服务日志（台账来源） |
+| `<out-dir-7>/server_startup_lines.txt` | 内存台账：KV 池 / CUDA graph / 权重字节 / non-default args（坑 12 修好的那批） |
+| `<out-dir-7>/bench_<arm>[_pN].log` | `vllm bench serve` 原始输出（指标的**唯一**真源） |
+| `<out-dir-7>/summary.txt` | 抓好的指标汇总（单卡臂 `summarize_single`，副本臂 `summarize_dual` 出 SUM/MEAN） |
+| `<out-dir-7>/engine_stats_<arm>_s{1,2,3}.txt` | 每点 3 次引擎态（Running/Waiting/KV usage），sweep6 只采 1 次丢了 R2b_c96t |
+| `<out-dir-7>/gpu_snapshots.txt` | 每相前后 GPU 快照（邻座证据） |
+
+**记录规矩**：`bench_*.log` 是原始证据，任何时候都能重算；`summary.txt` 只是方便看，
+**数字对不上以 `bench_*.log` 为准**。抓取正则有坑 12 的前科，新表必先对真实输出自测。
+
+**脚本内含的全部启动/压测参数**（照抄即可，不用手敲）：
+
+~~~bash
+# 服务（两卡 TP2 臂；副本臂见 boot_replica）
+CUDA_VISIBLE_DEVICES=2,3 HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
+  --port 8343 --served-model-name qwen38-27b --max-model-len 8192 \
+  --tensor-parallel-size 2 --max-num-seqs 128 [--quantization fp8 --kv-cache-dtype fp8]
+
+# 服务（单卡副本臂）
+CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
+  --port 834<1|2> --served-model-name qwen38-27b --max-model-len 8192 \
+  --quantization fp8 --max-num-seqs 128 --kv-cache-dtype fp8 \
+  --max-num-batched-tokens 8192 \
+  --speculative-config '{"method":"mtp","num_speculative_tokens":1}'
+
+# 压测（每路副本各发一份，吞吐相加、延迟取均值）
 <venv>/vllm bench serve --backend openai-chat --endpoint /v1/chat/completions \
   --tokenizer <model-dir> --dataset-name random --random-input-len 1024 \
-  --random-output-len 256 --temperature 0 --num-prompts 96 \
-  --max-concurrency {48,16} --host 127.0.0.1 --model qwen38-27b --port 8331
+  --random-output-len 256 --temperature 0 --num-prompts <N> \
+  --max-concurrency <C> --host 127.0.0.1 --model qwen38-27b --port <port>
 
-<venv>/python mtp_greedy.py 8331 <ARM>   # 贪心等价探针
+<venv>/python mtp_greedy.py <port> <ARM>   # 贪心等价探针（需要时）
 ~~~
 
 ## 坑（下次直接抄）
@@ -543,6 +587,32 @@ CUDA_VISIBLE_DEVICES=3 HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
    summarize_dual 因此全输出 nan，总吞吐改为手工从 p1/p2 相加）。教训同
    match_name 坑：**校验解析器要对着真实输出格式测一次**，别对着想象中的
    格式写。
+13. **`\"` 只在「双引号 `bash -c "..."` 内部」这一层是对的，提到顶层单引号
+   赋值就变成字面反斜杠**。bench6 把 spec JSON 直接内联在 `bash -c "..."` 行
+   里，所以 `'{\"method\": ...}'` 正确；bench7 把 k=1 的 config 提成顶层
+   `SPEC1='...'`，照抄同一串就错了——变量展开不会二次处理转义，vLLM 收到
+   `{\"method\": ...}` 直接 `JSONDecodeError` 拒绝启动。**检测方法**：拿一个
+   打印 argv 的 stub 脚本顶替 `<venv>/vllm`，把 `boot_replica` 的引号结构原样
+   跑一遍再 `json.loads`。不测的代价极不对称：B0（bf16，不带 spec）会正常跑
+   完，只有 R2c/R2b 两个副本臂会在起服务时崩——**整窗白烧，而且看起来像
+   「副本架构不行」而不是「脚本写错了」**。
+14. **overlay 被写满是这条线的结构性风险，不是一次意外**。容器只有 overlay
+   一个可写层，而 vLLM / torch / HF / pip / uv / Triton 默认全写 `$HOME` 和
+   `/tmp`；这一线从来没设过 `VLLM_CACHE_ROOT` / `TRITON_CACHE_DIR` / `TMPDIR`
+   / `XDG_CACHE_HOME`，于是每个权重下载、每个 venv、每份编译缓存都落在
+   overlay 上。2026-09-11 撑到 894G/894G（剩 635MB），**症状是 vLLM 根本起不
+   来**。宿主机 NVMe 是 bind mount、默认没有任何指针指向它。修法：脚本头部导
+   出三个缓存变量 + `OUT` 一起指向 NVMe，模型目录走软链（路径零改动）。同机
+   其他线（Qwen3-4B / Qwen2.5-Omni / relax-*）早就把 `models/ exps/ repos/`
+   放在 NVMe 上了，只有本线堆在 overlay。
+15. **共享机上只动自己这条线的目录和文件**。清理前必须按「归属」分三档，不是
+   按「大小」：**(a) 本线自己造的、可重跑** → 可删（构建产物、编译缓存、临时
+   checkpoint）；**(b) 别线的 venv / 模型 / 数据缓存** → 一律不碰，删掉要对方
+   重装重下，而且可能正好打断别人挂在后台的 watcher（本机就有几处按空闲轮询
+   自动开跑的 watcher 脚本）；**(c) 用途不明** → 只报不动。判断归属看
+   创建时间 + 名字里有没有本线的标识，拿不准就归 (c)。
+   **搬迁同理**：本线的模型目录可以移到共享盘再留软链（路径零改动、可逆），
+   别人的模型目录即使腾出的空间更多也不动。
 
 ## 文件清单
 
