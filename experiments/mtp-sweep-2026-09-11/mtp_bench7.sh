@@ -65,6 +65,20 @@ OUT=<out-dir-7>
 # would stay literal and vLLM would get invalid JSON. The escaping is only
 # correct one level in, inside boot_replica's double-quoted bash -c string.
 SPEC1='{"method": "mtp", "num_speculative_tokens": 1}'
+# The replica card pair. The pre-registered pin is GPU1+2 — every replica arm in
+# sweep7 ran there — so an unset environment reproduces the registered design
+# exactly. It is overridable so a contended night can use whichever pair the
+# neighbour leaves free instead of losing the window entirely.
+# What the override does and does not cost: every phase's OWN comparisons happen
+# within one boot on one pair, so the pair cancels out of them (R2bZ's ladder,
+# R2cZ's noise floor and crossover, R2cABr's three points are all untouched).
+# It only matters for CROSS-phase links — the crossover against the recorded
+# R2b_c120t/144t, and FV's 布局 rung against R2b48z. B1c priced the pair effect
+# at 2.21%, so those links carry a <=2.2% caveat that must be stated wherever
+# the number appears. Pairs must not be MIXED within a phase: both replicas of a
+# boot always take RPA and RPB.
+RPA=${RPA:-1}
+RPB=${RPB:-2}
 mkdir -p $OUT "$VLLM_CACHE_ROOT" "$TRITON_CACHE_DIR" "$TMPDIR"
 
 log() { echo "$(date +%H:%M:%S) $*" >> $OUT/run.log; }
@@ -100,6 +114,16 @@ wait_up() { # $1 port
     # burn the full 20-minute budget waiting for one. The phase still logs its
     # ABORT line, so the failure stays visible in run.log either way.
     [ "${GPU_GATE_FAILED:-0}" = "1" ] && return 1
+    # PITFALL 25b — a DEAD server is not a SLOW server. When a boot loses the
+    # CUDA-allocation race it exits within ~2 minutes with "Engine core
+    # initialization failed"; the old loop then sat here for the full 20 minutes
+    # waiting on a port nothing would ever bind. Check whether the process we
+    # launched still exists (grace of 4 polls = 40s so the python start-up does
+    # not count as death) and bail out immediately if it does not.
+    if [ "$i" -gt 4 ] && ! pgrep -f -- "--port $1 " > /dev/null 2>&1; then
+      log "wait_up $1: no process for this port after $((i*10))s — boot died (check server log for OOM)"
+      return 1
+    fi
   done
   return 1
 }
@@ -372,12 +396,27 @@ bench_pair() {
 # neighbour's footprint is ~16.7 GB, and an idle card reads 295 MiB — the
 # threshold has an order of magnitude of headroom on both sides.
 #
+# PITFALL 25 — ONE FREE SAMPLE IS NOT FREE (2026-09-11 16:14, cost: one boot and
+# a scare). The first version released the moment a single poll read free. That
+# poll passed at 16:14:45 and both replicas started; the neighbour launched a new
+# 41 GiB job 35 seconds later, my GPU1 replica died with "Engine core
+# initialization failed" (CUDA OOM), and for a moment my 40 GiB allocation and
+# theirs were racing for the same card. My job lost, which is the harmless
+# direction — but on a SHARED box the coin can land the other way, and OOMing
+# someone else's run is not a thing this script may ever do.
+# Fix: FREE_HOLD consecutive free polls (default 10 x 30s = 5 min) before
+# releasing, so a card that just went idle because a neighbour's job ended does
+# not get handed to us in the gap before their next launch. It cannot make the
+# race impossible (their launches are uncorrelated with us) — it makes the
+# window we are exposed to small instead of 30 seconds wide.
+FREE_HOLD=${FREE_HOLD:-10}
+#
 # The deadline exists so an overnight run terminates and reports rather than
 # blocking forever if the neighbour never leaves.
 WAIT_DEADLINE=${WAIT_DEADLINE:-$(($(date +%s) + 21600))}   # default 6h
 GPU_GATE_FAILED=0
 wait_gpus() { # $1 comma list, e.g. "1,2"
-  local want=$1 g used busy n=0
+  local want=$1 g used busy n=0 held=0
   while :; do
     busy=""
     for g in ${want//,/ }; do
@@ -385,19 +424,31 @@ wait_gpus() { # $1 comma list, e.g. "1,2"
       [ -n "$used" ] && [ "$used" -gt 2000 ] && busy="$busy $g:${used}MiB"
     done
     if [ -z "$busy" ]; then
-      [ "$n" -gt 0 ] && { log "GPUS_FREE $want after $n polls"; \
-        echo "$(date +%H:%M:%S) FREE $want waited $((n*30))s" >> $OUT/gpu_wait.txt; }
-      return 0
+      held=$((held+1))
+      if [ "$held" -ge "$FREE_HOLD" ]; then
+        [ "$n" -gt 0 ] && { log "GPUS_FREE $want after $n polls (held $held)"; \
+          echo "$(date +%H:%M:%S) FREE $want waited $((n*30))s held ${held}x30s" >> $OUT/gpu_wait.txt; }
+        return 0
+      fi
+      # Free but not yet proven stable — say so once, so a 5-minute hold does not
+      # look like the script has hung.
+      [ "$held" -eq 1 ] && log "GPUS_IDLE $want — holding $FREE_HOLD polls before boot"
+    else
+      if [ "$held" -gt 0 ]; then
+        log "GPUS_FREE_ABORTED $want:$busy after $held free polls — neighbour returned"
+        echo "$(date +%H:%M:%S) aborted-hold $want:$busy after ${held}x30s" >> $OUT/gpu_wait.txt
+      fi
+      held=0
     fi
     n=$((n+1))
     if [ $((n % 20)) -eq 1 ]; then
-      log "WAIT_GPU $want:$busy (poll $n)"
-      echo "$(date +%H:%M:%S) busy $want:$busy" >> $OUT/gpu_wait.txt
+      log "WAIT_GPU $want:${busy:-idle-holding} (poll $n)"
+      echo "$(date +%H:%M:%S) busy $want:${busy:-none} held=$held" >> $OUT/gpu_wait.txt
       nvidia-smi --query-gpu=index,memory.used --format=csv,noheader >> $OUT/gpu_wait.txt
     fi
     if [ "$(date +%s)" -gt "$WAIT_DEADLINE" ]; then
-      log "WAIT_GPU DEADLINE hit waiting for $want:$busy — skipping this boot"
-      echo "$(date +%H:%M:%S) DEADLINE $want:$busy" >> $OUT/gpu_wait.txt
+      log "WAIT_GPU DEADLINE hit waiting for $want:${busy:-idle} — skipping this boot"
+      echo "$(date +%H:%M:%S) DEADLINE $want:${busy:-none}" >> $OUT/gpu_wait.txt
       GPU_GATE_FAILED=1
       return 1
     fi
@@ -508,8 +559,8 @@ if want B1c; then tp2_phase B1c "1,2" "--quantization fp8 --kv-cache-dtype fp8 -
 
 # ---------- P3: R2c k=1 pair (GPU1+2) ----------
 if want R2c; then
-boot_replica 8341 1 $OUT/server_R2c_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2c_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2c_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2c_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2c pair up ($RC1/$RC2)"
   startup_lines $OUT/server_R2c_1.log $OUT/server_R2c_2.log
@@ -526,8 +577,8 @@ fi
 
 # ---------- P4: R2b k=0 pair, bracket the knee (GPU1+2) ----------
 if want R2b; then
-boot_replica 8341 1 $OUT/server_R2b_1.log ""; RB1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2b_2.log ""; RB2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2b_1.log ""; RB1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2b_2.log ""; RB2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2b pair up ($RB1/$RB2)"
   startup_lines $OUT/server_R2b_1.log $OUT/server_R2b_2.log
@@ -572,8 +623,8 @@ fi
 
 # ---------- P8: R2b48 — the k=0 @24-lane cell, same window as the k=1 one ----------
 if want R2b48; then
-boot_replica 8341 1 $OUT/server_R2b48_1.log ""; RB1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2b48_2.log ""; RB2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2b48_1.log ""; RB1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2b48_2.log ""; RB2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2b48 pair up ($RB1/$RB2)"
   startup_lines $OUT/server_R2b48_1.log $OUT/server_R2b48_2.log
@@ -619,8 +670,8 @@ fi
 # on different pools. Re-measuring the denominator at seed 0 makes the ratio
 # same-pool as well as same-window, which is what the +74% claim needs.
 if want R2b48z; then
-boot_replica 8341 1 $OUT/server_R2b48z_1.log ""; RZ1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2b48z_2.log ""; RZ2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2b48z_1.log ""; RZ1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2b48z_2.log ""; RZ2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2b48z pair up ($RZ1/$RZ2)"
   startup_lines $OUT/server_R2b48z_1.log $OUT/server_R2b48z_2.log
@@ -646,8 +697,8 @@ fi
 # then 2% IS the noise floor here and the amendment-4 band must be widened.
 # Three benches back to back, no anchor — the points bracket each other.
 if want R2cABr; then
-boot_replica 8341 1 $OUT/server_R2cABr_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2cABr_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2cABr_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2cABr_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2cABr pair up ($RC1/$RC2)"
   startup_lines $OUT/server_R2cABr_1.log $OUT/server_R2cABr_2.log
@@ -675,8 +726,8 @@ fi
 #   * the whole ladder at one seed on one boot is internally consistent, which
 #     the existing ladder (seeds 708-711, three separate boots) is not.
 if want R2bZ; then
-boot_replica 8341 1 $OUT/server_R2bZ_1.log ""; ZB1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2bZ_2.log ""; ZB2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2bZ_1.log ""; ZB1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2bZ_2.log ""; ZB2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2bZ pair up ($ZB1/$ZB2)"
   startup_lines $OUT/server_R2bZ_1.log $OUT/server_R2bZ_2.log
@@ -730,8 +781,8 @@ fi
 # back-to-back c48t points on one boot measure it directly. Then 120t/144t at
 # the same pool as R2bZ give the crossover as a same-pool, same-window number.
 if want R2cZ; then
-boot_replica 8341 1 $OUT/server_R2cZ_1.log "--speculative-config '$SPEC1'"; ZC1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2cZ_2.log "--speculative-config '$SPEC1'"; ZC2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2cZ_1.log "--speculative-config '$SPEC1'"; ZC1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2cZ_2.log "--speculative-config '$SPEC1'"; ZC2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2cZ pair up ($ZC1/$ZC2)"
   startup_lines $OUT/server_R2cZ_1.log $OUT/server_R2cZ_2.log
@@ -853,8 +904,8 @@ fi
 #     ONLY in the window, so the gap is pure window drift.
 # If the same-window gap comes out ~0, the acceptance explanation is FALSIFIED.
 if want R2c0; then
-boot_replica 8341 1 $OUT/server_R2c0_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2c0_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2c0_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2c0_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2c0 pair up ($RC1/$RC2)"
   startup_lines $OUT/server_R2c0_1.log $OUT/server_R2c0_2.log
@@ -891,8 +942,8 @@ fi
 # low gap => R2c_c48t's 600.40 was a load artifact; high gap => k=1 is simply
 # not reproducible to better than ~5% and the 投机 factor must be a RANGE.
 if want R2c0b; then
-boot_replica 8341 1 $OUT/server_R2c0b_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2c0b_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2c0b_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2c0b_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2c0b pair up ($RC1/$RC2)"
   startup_lines $OUT/server_R2c0b_1.log $OUT/server_R2c0b_2.log
@@ -911,8 +962,8 @@ fi
 # Running k=1 at the SAME lanes makes the crossover a direct measurement instead
 # of a comparison across different lane counts, which is all we have now.
 if want R2cH; then
-boot_replica 8341 1 $OUT/server_R2cH_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2cH_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2cH_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2cH_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2cH pair up ($RC1/$RC2)"
   startup_lines $OUT/server_R2cH_1.log $OUT/server_R2cH_2.log
@@ -963,8 +1014,8 @@ fi
 # any window check. FORCE_SEED=702 goes first so that if the second bench dies
 # the rarer datum is already on disk.
 if want R2cAB; then
-boot_replica 8341 1 $OUT/server_R2cAB_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
-boot_replica 8342 2 $OUT/server_R2cAB_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
+boot_replica 8341 $RPA $OUT/server_R2cAB_1.log "--speculative-config '$SPEC1'"; RC1=$LAST_PID
+boot_replica 8342 $RPB $OUT/server_R2cAB_2.log "--speculative-config '$SPEC1'"; RC2=$LAST_PID
 if wait_up 8341 && wait_up 8342; then
   log "R2cAB pair up ($RC1/$RC2)"
   startup_lines $OUT/server_R2cAB_1.log $OUT/server_R2cAB_2.log
@@ -998,8 +1049,8 @@ fi
 if [ "${RUN_EXTRA:-0}" = "1" ]; then
   for K in 1 2; do
     SPEC='{\"method\": \"mtp\", \"num_speculative_tokens\": '$K'}'
-    boot_replica 8341 1 $OUT/server_Rkd${K}_1.log "--speculative-config '$SPEC'"; P1=$LAST_PID
-    boot_replica 8342 2 $OUT/server_Rkd${K}_2.log "--speculative-config '$SPEC'"; P2=$LAST_PID
+    boot_replica 8341 $RPA $OUT/server_Rkd${K}_1.log "--speculative-config '$SPEC'"; P1=$LAST_PID
+    boot_replica 8342 $RPB $OUT/server_Rkd${K}_2.log "--speculative-config '$SPEC'"; P2=$LAST_PID
     if wait_up 8341 && wait_up 8342; then
       log "R2kd${K} pair up (k=$K)"
       startup_lines $OUT/server_Rkd${K}_1.log $OUT/server_Rkd${K}_2.log
