@@ -1,0 +1,43 @@
+=== ARM W4 weights=[int4-mixed] kv=[fp8] spec=[k=2] len=[8192] sched=[8192] 06:28:26 ===
+06:28:46 W4 SERVER_DIED
+(APIServer pid=84296)     return cached_processor_from_config(
+(APIServer pid=84296)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/vllm/transformers_utils/processor.py", line 391, in cached_processor_from_config
+(APIServer pid=84296)     return cached_get_processor_without_dynamic_kwargs(
+(APIServer pid=84296)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/vllm/transformers_utils/processor.py", line 359, in cached_get_processor_without_dynamic_kwargs
+(APIServer pid=84296)     processor = cached_get_processor(
+(APIServer pid=84296)                 ^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/vllm/transformers_utils/processor.py", line 245, in get_processor
+(APIServer pid=84296)     processor = processor_cls.from_pretrained(
+(APIServer pid=84296)                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/transformers/processing_utils.py", line 1735, in from_pretrained
+(APIServer pid=84296)     args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, processor_dict, **kwargs)
+(APIServer pid=84296)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/transformers/processing_utils.py", line 1875, in _get_arguments_from_pretrained
+(APIServer pid=84296)     sub_processor = auto_processor_class.from_pretrained(
+(APIServer pid=84296)                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/transformers/models/auto/image_processing_auto.py", line 607, in from_pretrained
+(APIServer pid=84296)     raise initial_exception
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/transformers/models/auto/image_processing_auto.py", line 594, in from_pretrained
+(APIServer pid=84296)     config_dict, _ = ImageProcessingMixin.get_image_processor_dict(
+(APIServer pid=84296)                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+(APIServer pid=84296)   File "<venv>/lib/python3.12/site-packages/transformers/image_processing_base.py", line 334, in get_image_processor_dict
+(APIServer pid=84296)     raise OSError(
+(APIServer pid=84296) OSError: Can't load image processor for '<model-dir>-int4'. If you were trying to load it from 'https://huggingface.co/models', make sure you don't have a local directory with the same name. Otherwise, make sure '<model-dir>-int4' is the correct path to a directory containing a preprocessor_config.json file
+ABORT
+=== ARM W4 weights=[int4-mixed] kv=[fp8] spec=[k=2] len=[8192] sched=[8192] 06:39:53 ===
+06:43:33 W4 UP after 220s
+(APIServer pid=84816) INFO 09-11 06:40:00 [api_utils.py:272] non-default args: {'model_tag': '<model-dir>-int4', 'port': 8331, 'model': '<model-dir>-int4', 'max_model_len': 8192, 'served_model_name': ['qwen38-27b'], 'kv_cache_dtype': 'fp8', 'max_num_batched_tokens': 8192, 'max_num_seqs': 128, 'speculative_config': {'method': 'mtp', 'num_speculative_tokens': 2}}
+(APIServer pid=84816) INFO 09-11 06:40:03 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=8192.
+(EngineCore pid=85189) INFO 09-11 06:40:21 [core.py:122] Initializing a V1 LLM engine (v0.28.0) with config: model='<model-dir>-int4', speculative_config=SpeculativeConfig(method='mtp', model='<model-dir>-int4', num_spec_tokens=2), tokenizer='<model-dir>-int4', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.bfloat16, max_seq_len=8192, download_dir=None, load_format=auto, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=False, quantization=compressed-tensors, quantization_config=None, enforce_eager=False, enable_return_routed_experts=False, kv_cache_dtype=fp8, device_config=cuda, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False, jit_monitor_mode='warn', jit_monitor_verbose=False), seed=0, served_model_name=qwen38-27b, enable_prefix_caching=True, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.VLLM_COMPILE: 3>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'inductor', 'custom_ops': ['none'], 'ir_enable_torch_wrap': True, 'splitting_ops': ['vllm::unified_attention_with_output', 'vllm::unified_mla_attention_with_output', 'vllm::mamba_mixer2', 'vllm::mamba_mixer', 'vllm::short_conv', 'vllm::linear_attention', 'vllm::qwen_gdn_attention_core', 'vllm::qwen_gdn_attention_core_fused_norm_packed', 'vllm::gdn_attention_core_xpu', 'vllm::olmo_hybrid_gdn_full_forward', 'vllm::sparse_attn_indexer', 'vllm::rocm_aiter_sparse_attn_indexer', 'vllm::deepseek_v4_attention', 'vllm::hpc_rope_norm_forward', 'vllm::unified_kv_cache_update', 'vllm::unified_mla_kv_cache_update'], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [8192], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.FULL_AND_PIECEWISE: (2, 1)>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 272, 288, 304, 320, 336, 352, 368, 384, 400, 416, 432, 448, 464, 480, 496, 512], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': False, 'fuse_act_quant': False, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'enable_qk_norm_rope_fusion': False, 'fuse_rope_kvcache_cat_mla': False, 'fuse_act_padding': False, 'fuse_qk_norm_rope_kvcache': False}, 'max_cudagraph_capture_size': 512, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': False, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), enable_flashinfer_autotune=True, enable_cutedsl_warmup=True, enable_jit_warmup=True, enable_bf16x3_router_gemm=False, moe_backend='auto', linear_backend='auto')
+(EngineCore pid=85189) INFO 09-11 06:42:53 [gpu_worker.py:593] CUDA graph memory profiling is enabled (default since v0.21.0). The current --gpu-memory-utilization=0.9200 is equivalent to --gpu-memory-utilization=0.9034 without CUDA graph memory profiling. To maintain the same effective KV cache size as before, increase --gpu-memory-utilization to 0.9366. To disable, set VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS=0.
+(EngineCore pid=85189) INFO 09-11 06:42:53 [kv_cache_utils.py:1869] GPU KV cache size: 124,700 tokens, Maximum concurrency for 8,192 tokens per request: 15.22x
+06:46:13 W4 bench c48 done
+06:49:00 W4 bench c16 done
+06:49:38 W4 greedy done
+  File "<out-dir>/ceval_eval.py", line 23, in load_questions
+    from datasets import load_dataset, get_dataset_config_names
+ModuleNotFoundError: No module named 'datasets'
+06:49:42 W4 ceval done
+ALL_DONE 06:50:03

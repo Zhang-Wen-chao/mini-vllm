@@ -1,0 +1,16 @@
+W4 c48 Benchmark duration (s):                  149.84    
+W4 c48 Output token throughput (tok/s):         164.01    
+W4 c48 Total token throughput (tok/s):          853.63    
+W4 c48 Mean TTFT (ms):                          34434.05  
+W4 c48 Median TTFT (ms):                        43252.43  
+W4 c48 P99 TTFT (ms):                           58249.95  
+W4 c48 Mean TPOT (ms):                          122.85    
+W4 c48 Mean ITL (ms):                           122.37    
+W4 c16 Benchmark duration (s):                  158.25    
+W4 c16 Output token throughput (tok/s):         155.30    
+W4 c16 Total token throughput (tok/s):          808.27    
+W4 c16 Mean TTFT (ms):                          7820.34   
+W4 c16 Median TTFT (ms):                        8190.69   
+W4 c16 P99 TTFT (ms):                           8824.26   
+W4 c16 Mean TPOT (ms):                          72.57     
+W4 c16 Mean ITL (ms):                           72.28     

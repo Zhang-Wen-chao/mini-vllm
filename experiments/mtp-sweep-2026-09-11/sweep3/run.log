@@ -1,0 +1,7 @@
+=== ARM C2b kv=[fp8] spec=[k=2] sched=8192-explicit 04:23:30 ===
+04:26:10 C2b UP after 160s
+(APIServer pid=76566) INFO 09-11 04:23:38 [api_utils.py:272] non-default args: {'model_tag': '<model-dir>', 'port': 8331, 'model': '<model-dir>', 'max_model_len': 8192, 'quantization': 'fp8', 'served_model_name': ['qwen38-27b'], 'kv_cache_dtype': 'fp8', 'max_num_batched_tokens': 8192, 'max_num_seqs': 128, 'speculative_config': {'method': 'mtp', 'num_speculative_tokens': 2}}
+(APIServer pid=76566) INFO 09-11 04:23:39 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=8192.
+04:27:44 C2b bench c48 done
+04:29:15 C2b bench c16 done
+ALL_DONE 04:29:36

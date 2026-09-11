@@ -1,0 +1,17 @@
+=== ARM M1 spec=[{"method": "mtp", "num_speculative_tokens": 1}] 01:42:26 ===
+01:45:06 M1 UP after 160s
+01:46:41 M1 bench c48 done
+01:48:22 M1 bench c16 done
+01:48:43 M1 greedy done
+=== ARM M2 spec=[{"method": "mtp", "num_speculative_tokens": 2}] 01:49:04 ===
+01:50:44 M2 UP after 100s
+01:52:20 M2 bench c48 done
+01:53:58 M2 bench c16 done
+01:54:16 M2 greedy done
+=== ARM A2 spec=[] 01:54:36 ===
+01:56:07 A2 UP after 90s
+01:57:36 A2 bench c48 done
+01:59:37 A2 bench c16 done
+02:00:12 A2 greedy done
+ALL_DONE 02:00:33
+SWEEP_EXIT_0

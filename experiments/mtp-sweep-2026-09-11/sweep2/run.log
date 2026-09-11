@@ -1,0 +1,16 @@
+=== ARM K2 kv=[fp8] spec=[] 02:08:03 ===
+02:10:23 K2 UP after 140s
+02:11:43 K2 bench c48 done
+02:13:44 K2 bench c16 done
+02:14:19 K2 greedy done
+=== ARM C2 kv=[fp8] spec=[{"method": "mtp", "num_speculative_tokens": 2}] 02:14:39 ===
+02:17:10 C2 UP after 150s
+02:18:44 C2 bench c48 done
+02:20:17 C2 bench c16 done
+02:20:35 C2 greedy done
+=== ARM A3 kv=[] spec=[] 02:20:56 ===
+02:22:26 A3 UP after 90s
+02:23:55 A3 bench c48 done
+02:25:57 A3 bench c16 done
+02:26:31 A3 greedy done
+ALL_DONE 02:26:52

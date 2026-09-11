@@ -1,0 +1,8 @@
+(APIServer pid=80595) INFO 09-11 05:33:43 [api_utils.py:272] non-default args: {'model_tag': '<model-dir>', 'port': 8331, 'model': '<model-dir>', 'max_model_len': 4096, 'quantization': 'fp8', 'served_model_name': ['qwen38-27b'], 'kv_cache_dtype': 'fp8', 'max_num_batched_tokens': 8192, 'max_num_seqs': 128, 'speculative_config': {'method': 'mtp', 'num_speculative_tokens': 2}}
+(APIServer pid=80595) WARNING 09-11 05:33:45 [speculative.py:971] Enabling num_speculative_tokens > 1 will run multiple times of forward on same MTP layer,which may result in lower acceptance rate
+(APIServer pid=80595) INFO 09-11 05:33:45 [scheduler.py:242] Chunked prefill is enabled with max_num_batched_tokens=8192.
+(APIServer pid=80595) INFO 09-11 05:33:45 [config.py:605] Mamba cache mode is set to 'align' for Qwen3_5ForConditionalGeneration by default when prefix caching is enabled
+(EngineCore pid=80966) WARNING 09-11 05:34:03 [__init__.py:205] min_p and logit_bias parameters won't work with speculative decoding.
+(EngineCore pid=80966) INFO 09-11 05:34:25 [interface.py:911] Setting attention block size to 1600 tokens to ensure that attention page size is >= mamba page size.
+(EngineCore pid=80966) INFO 09-11 05:34:25 [interface.py:935] Padding mamba page size by 0.88% to ensure that mamba page size and attention page size are exactly equal.
+(EngineCore pid=80966) INFO 09-11 05:35:35 [gpu_worker.py:578] Available KV cache memory: 9.28 GiB
