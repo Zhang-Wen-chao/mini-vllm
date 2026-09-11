@@ -949,6 +949,118 @@ print("   different abscissa, and these four rungs only bracket where it crosses
 EOF
 fi
 
+# ---------- P22: Z3 — the crossover band, fine-swept, plus an in-place @132t re-test ----------
+# 发现 F left two claims resting on ONE reading each: "k=1 dips at @132t" and
+# "k=0 peaks at @132t". @132t was ADDED by Z2 -- it has no prior measurement in
+# the whole dataset, so nothing on disk can say whether it is structure or a
+# spike. Z3 re-reads it in place (@132tr, the immediately following position --
+# same arm, same pool, same boot, one position step apart) and fills the 126/138
+# gaps so the k=0-k=1 gap curve is sampled BETWEEN the endpoints instead of only
+# at them. Same shape as Z2 (one boot per arm, one discarded warm-up point,
+# identical positions on both arms) so the two are directly comparable.
+if want Z3; then
+  for spec in 0 1; do
+    if [ "$spec" = "1" ]; then sp="--speculative-config '$SPEC1'"; pfx=R2cZx
+    else sp=""; pfx=R2bZx; fi
+    boot_replica 8341 $RPA $OUT/server_${pfx}_1.log "$sp"; Z31=$LAST_PID
+    boot_replica 8342 $RPB $OUT/server_${pfx}_2.log "$sp"; Z32=$LAST_PID
+    if wait_up 8341 && wait_up 8342; then
+      log "$pfx pair up ($Z31/$Z32)"
+      startup_lines $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      FORCE_SEED=0 bench_pair ${pfx}_w0   60 120 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      for c in 120 126 132; do
+        FORCE_SEED=0 bench_pair ${pfx}_c${c}t $((c/2)) $c 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      done
+      # in-place re-test of @132t, deliberately at the NEXT position
+      FORCE_SEED=0 bench_pair ${pfx}_c132tr 66 132 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      for c in 138 144; do
+        FORCE_SEED=0 bench_pair ${pfx}_c${c}t $((c/2)) $c 8341 2 $OUT/server_${pfx}_1.log $OUT/server_${pfx}_2.log
+      done
+      spec_metrics ${pfx}_c132t 8341 8342
+    else
+      log "ABORT $pfx boot failed"
+    fi
+    kill_srv $Z31; kill_srv $Z32
+    gpu_snap
+  done
+  log "Z3 phase done"
+  # The P1-P4 verdicts are computed HERE, mechanically, from the thresholds
+  # pre-registered in the README before this phase ran. Printed as CONFIRMED /
+  # FALSIFIED so the write-up cannot quietly re-interpret a miss.
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import os, re, sys
+out = sys.argv[1]
+Z2 = {"k=0": 707.50, "k=1": 654.76}   # Z2 warm ladders, this same box
+def g(f, key):
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
+    return float(m.group(1)) if m else float("nan")
+def total(tag):
+    return sum(g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput") for i in (1, 2))
+RUNGS = [120, 126, 132, 138, 144]
+print("== Z3: crossover band fine-swept, @132t re-read IN PLACE (next position) ==")
+_miss = [t for p in ("R2bZx", "R2cZx") for t in
+         [f"{p}_w0"] + [f"{p}_c{c}t" for c in RUNGS] + [f"{p}_c132tr"]
+         if total(t) != total(t)]
+print(f"  completeness: {'ALL TWELVE PRESENT' if not _miss else 'INCOMPLETE -> ' + ', '.join(_miss)}")
+L = {}
+for pfx, name in (("R2bZx", "k=0"), ("R2cZx", "k=1")):
+    L[name] = {c: total(f"{pfx}_c{c}t") for c in RUNGS}
+    L[name]["r"] = total(f"{pfx}_c132tr")
+    print(f"  {name} ladder (warm, positions aligned):")
+    for c in RUNGS:
+        v = L[name][c]
+        print(f"     @{c}t ({c//2:>2} lanes/rep): {v:8.2f}" if v == v else
+              f"     @{c}t ({c//2:>2} lanes/rep): MISSING")
+    r = L[name]["r"]
+    print(f"     @132t REPEAT (131.5-ish, next pos): {r:8.2f}" if r == r else
+          "     @132t REPEAT: MISSING")
+print("== gap curve (k=1 - k=0) / k=0, and the sign-change count ==")
+gaps, signs = [], []
+for c in RUNGS:
+    k0, k1 = L["k=0"][c], L["k=1"][c]
+    if k0 != k0 or k1 != k1:
+        print(f"   @{c}t: n/a"); continue
+    gp = (k1 - k0) / k0 * 100
+    gaps.append((c, gp)); signs.append(1 if gp > 0 else -1)
+    print(f"   @{c}t ({c//2:>2} lanes/rep): k=0 {k0:8.2f}  k=1 {k1:8.2f}  -> {gp:+7.2f}%  "
+          f"({'k=0' if k0 > k1 else 'k=1'} wins)")
+flips = sum(1 for i in range(1, len(signs)) if signs[i] != signs[i-1])
+print(f"   sign changes across the sweep: {flips} (P3 predicts exactly 1)")
+print("== pre-registered verdicts ==")
+for name in ("k=1", "k=0"):
+    a, r = L[name][132], L[name]["r"]
+    if a != a or r != r:
+        print(f"   {name}: n/a (incomplete)"); continue
+    d = (r - a) / a * 100
+    print(f"   {name} @132t {a:.2f} -> repeat {r:.2f} = {d:+.2f}%  (Z2 said {Z2[name]:.2f})")
+s = L["k=1"]["r"]
+if s == s:
+    inband = abs(s - Z2["k=1"]) / Z2["k=1"] * 100 <= 1.5
+    lower = all(L["k=1"][c] != L["k=1"][c] or s < L["k=1"][c] for c in (126, 138))
+    print(f"   P1 (k=1 dip reproduces): {'CONFIRMED' if inband and lower else 'FALSIFIED'}"
+          f"   [within 1.5% of {Z2['k=1']:.2f}: {inband}; below both @126t/@138t: {lower}]")
+s = L["k=0"]["r"]
+if s == s:
+    ok = s >= 700
+    print(f"   P2 (k=0 peak at @132t reproduces): {'CONFIRMED' if ok else 'FALSIFIED'}"
+          f"   [repeat {s:.2f} vs threshold 700 = {Z2['k=0']:.2f} - 1%]")
+print(f"   P3 (single monotone crossing): {'CONFIRMED' if flips == 1 else 'FALSIFIED'}"
+      f"   [sign changes = {flips}, predicted 1]")
+for name in ("k=0", "k=1"):
+    a, r = L[name][132], L[name]["r"]
+    if a != a or r != r:
+        continue
+    d = abs(r - a) / a * 100
+    v = "CONFIRMED" if d <= 1.0 else ("FALSIFIED" if d > 1.5 else "AMBIGUOUS (1.0-1.5%)")
+    print(f"   P4 ({name} repeat within 1%): {v}   [delta {d:.2f}%]")
+print("   NOTE: the sweep only BRACKETS the crossing; the k=0 peak and the k=1 dip")
+print("   sit at different abscissae, so no single lane count is the 'recommended'")
+print("   operating point -- this whole band is deep-overload (see 发现 E).")
+EOF
+fi
+
 # ---------- P20: FV — the whole four-factor chain on ONE seed ----------
 # The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
 # fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to
