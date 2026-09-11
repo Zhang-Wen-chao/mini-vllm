@@ -1351,6 +1351,123 @@ print("   rung other than c48t/c120t is in scope.")
 EOF
 fi
 
+# ---------- P26: Z7 — reversed interleave: boot-scoped or shape-scoped? ----------
+# Z6 measured the first-point effect at 1.37% but its interleave STARTED at @48t,
+# so n1 was simultaneously "the boot's first point" AND "@48t's first point" --
+# the two hypotheses were welded to the same reading. This phase is Z6 with the
+# two shapes swapped, so the boot's first point lands on @120t instead. Together
+# the two phases are a 2x2 on (shape) x (is-first-point) with every cell read.
+#
+# The question is not rhetorical. If the effect is BOOT-scoped then "discard one
+# preheat point per phase" is sufficient. If it is SHAPE-scoped, then in any
+# ladder that changes shape every rung, every rung is that shape's first point,
+# and the practice needs re-examining. Z2 and Z5 already contradict each other on
+# the @120t first point (+0.34% / -0.90%), so this needs the one orientation
+# nobody has run.
+if want Z7; then
+  boot_replica 8341 $RPA $OUT/server_R2cZ7_1.log "--speculative-config '$SPEC1'"; Z71=$LAST_PID
+  boot_replica 8342 $RPB $OUT/server_R2cZ7_2.log "--speculative-config '$SPEC1'"; Z72=$LAST_PID
+  if wait_up 8341 && wait_up 8342; then
+    log "R2cZ7 pair up ($Z71/$Z72)"
+    startup_lines $OUT/server_R2cZ7_1.log $OUT/server_R2cZ7_2.log
+    FORCE_SEED=0 bench_pair R2cZ7_m1 60 120 8341 2 $OUT/server_R2cZ7_1.log $OUT/server_R2cZ7_2.log
+    FORCE_SEED=0 bench_pair R2cZ7_m2 24  48 8341 2 $OUT/server_R2cZ7_1.log $OUT/server_R2cZ7_2.log
+    FORCE_SEED=0 bench_pair R2cZ7_m3 60 120 8341 2 $OUT/server_R2cZ7_1.log $OUT/server_R2cZ7_2.log
+    FORCE_SEED=0 bench_pair R2cZ7_m4 24  48 8341 2 $OUT/server_R2cZ7_1.log $OUT/server_R2cZ7_2.log
+    FORCE_SEED=0 bench_pair R2cZ7_m5 60 120 8341 2 $OUT/server_R2cZ7_1.log $OUT/server_R2cZ7_2.log
+    FORCE_SEED=0 bench_pair R2cZ7_m6 24  48 8341 2 $OUT/server_R2cZ7_1.log $OUT/server_R2cZ7_2.log
+    spec_metrics R2cZ7_m3 8341 8342
+  else
+    log "ABORT R2cZ7 boot failed"
+  fi
+  kill_srv $Z71; kill_srv $Z72
+  gpu_snap
+  log "Z7 phase done"
+  # S1-S4 verdicts computed HERE from the README's pre-registered thresholds.
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import os, re, sys
+out = sys.argv[1]
+def g(f, key):
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
+    return float(m.group(1)) if m else float("nan")
+def rep(tag, i):
+    return g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput")
+def tot(tag):
+    return rep(tag, 1) + rep(tag, 2)
+def split(tag):
+    a, b = rep(tag, 1), rep(tag, 2)
+    if a != a or b != b or (a + b) == 0:
+        return float("nan")
+    return abs(a - b) / ((a + b) / 2) * 100
+TAGS = ["m1", "m2", "m3", "m4", "m5", "m6"]
+SHAPE = {"m1": "120t", "m2": "48t", "m3": "120t", "m4": "48t", "m5": "120t", "m6": "48t"}
+print("== Z7: reversed interleave -- boot-scoped or shape-scoped? (single arm k=1, "
+      "one boot, shapes 120,48,120,48,120,48, seed pinned to 0) ==")
+_miss = [f"R2cZ7_{t}" for t in TAGS if tot(f"R2cZ7_{t}") != tot(f"R2cZ7_{t}")]
+print(f"  completeness: {'ALL SIX PRESENT' if not _miss else 'INCOMPLETE -> ' + ', '.join(_miss)}")
+for t in TAGS:
+    v, s = tot(f"R2cZ7_{t}"), split(f"R2cZ7_{t}")
+    if v != v:
+        print(f"     {t} (@{SHAPE[t]:<4}, pos {TAGS.index(t)+1})  MISSING"); continue
+    flag = "" if s != s or s <= 2.0 else "   <-- p1/p2 SPLIT OVER 2%"
+    print(f"     {t} (@{SHAPE[t]:<4}, pos {TAGS.index(t)+1})  total {v:8.2f}"
+          f"   p1 {rep('R2cZ7_'+t,1):8.2f}  p2 {rep('R2cZ7_'+t,2):8.2f}"
+          f"   split {s:5.2f}%{flag}")
+v = {t: tot(f"R2cZ7_{t}") for t in TAGS}
+print("== pre-registered verdicts ==")
+print("   [Z6 reference, same host: @48t first point -1.37%, @120t point -0.09%;")
+print("    Z2 w0 @120t position 1 +0.34% / Z5 w0 @120t position 1 -0.90% -- contradictory]")
+def pct(x, base):
+    return (base - x) / base * 100
+d1 = d2 = float("nan")
+if v["m1"] == v["m1"] and v["m3"] == v["m3"] and v["m5"] == v["m5"]:
+    base = (v["m3"] + v["m5"]) / 2
+    d1 = pct(v["m1"], base)
+    print(f"   S1 (BOOT-scoped: m1 @120t first point low >=1%): "
+          f"{'CONFIRMED' if d1 >= 1.0 else 'FALSIFIED'}"
+          f"   [m1 {v['m1']:.2f} vs m3/m5 mean {base:.2f} = {d1:+.2f}%]")
+if v["m2"] == v["m2"] and v["m4"] == v["m4"] and v["m6"] == v["m6"]:
+    base = (v["m4"] + v["m6"]) / 2
+    d2 = pct(v["m2"], base)
+    ok = d2 >= 1.0 and d1 == d1 and d1 < 0.5
+    print(f"   S2 (SHAPE-scoped: m2 @48t low >=1% AND m1 <0.5%): "
+          f"{'CONFIRMED' if ok else 'FALSIFIED'}"
+          f"   [m2 {v['m2']:.2f} vs m4/m6 mean {base:.2f} = {d2:+.2f}%; m1 {d1:+.2f}%]")
+seq = [v[t] for t in TAGS]
+if all(x == x for x in seq):
+    mono = all(seq[i] < seq[i+1] for i in range(5))
+    print(f"   S3 (not a global drift): {'FALSIFIED' if mono else 'CONFIRMED'}"
+          f"   [sequence {', '.join(f'{x:.1f}' for x in seq)}]")
+    if mono:
+        print("      -> pure runtime drift; NO VERDICT on the position effect from this phase.")
+if v["m3"] == v["m3"] and v["m5"] == v["m5"] and v["m4"] == v["m4"] and v["m6"] == v["m6"]:
+    e35 = abs(v["m3"] - v["m5"]) / ((v["m3"] + v["m5"]) / 2) * 100
+    e46 = abs(v["m4"] - v["m6"]) / ((v["m4"] + v["m6"]) / 2) * 100
+    ok = e35 <= 0.5 and e46 <= 0.5
+    bad = e35 > 1.0 or e46 > 1.0
+    print(f"   S4 (noise floor below the effect, both <=0.5%): "
+          f"{'CONFIRMED' if ok else ('FALSIFIED' if bad else 'AMBIGUOUS (0.5-1%)')}"
+          f"   [{e35:.2f}% / {e46:.2f}%]")
+    if bad:
+        print("      -> band noise floor >= effect size; NOT ADJUDICABLE, question stays OPEN.")
+print("== DISCRIMINATION ==")
+s1 = d1 == d1 and d1 >= 1.0
+s2 = d2 == d2 and d2 >= 1.0 and d1 == d1 and d1 < 0.5
+if s1:
+    print("   -> BOOT-scoped. 'Discard one preheat point per phase' is sufficient; the")
+    print("      weak form of 发现 B stays as 'first point after boot', NOT 'c48t'.")
+elif s2:
+    print("   -> SHAPE-scoped (@48t). Every rung of a shape-changing ladder is that")
+    print("      shape's first point -- the preheat-discard practice needs re-examination.")
+else:
+    print("   -> NEITHER fired: the effect did not reproduce in this window. 发现 B's")
+    print("      weak form is VOID (third strike), and Z6's 1.37% is itself suspect as")
+    print("      an isolated reading.")
+EOF
+fi
+
 # ---------- P20: FV — the whole four-factor chain on ONE seed ----------
 # The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
 # fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to
