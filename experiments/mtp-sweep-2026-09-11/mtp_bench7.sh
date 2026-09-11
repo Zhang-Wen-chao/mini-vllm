@@ -1157,6 +1157,98 @@ print("   -- the deployment range -- is untouched by this phase.")
 EOF
 fi
 
+# ---------- P24: Z5 — independent replication of the k=1 @126t notch ----------
+# Z3 produced two claims. Z4 replicated the first (the k=0 @138t cliff) and
+# FALSIFIED it, so that one is retracted. The second -- k=1's notch at 63
+# lanes/replica -- is still standing on ONE boot's reading and is already in the
+# main narrative. Half a phase's conclusions being overturned on replication
+# while the other half is still cited without it is an asymmetry that has to go.
+# Z4 also handed Z5 a specific suspect: two replicas can settle into a stable
+# split at high concurrency, and a split DEPRESSES the summed total. Z3's @126t
+# already showed a 1.4% p1/p2 gap, so the "notch" could simply be a weaker
+# instance of that. R3/R4 test exactly this, using the |p1-p2| > 2% threshold
+# that the Z4 ledger scan produced.
+# Single arm: only k=1 boots.
+if want Z5; then
+  boot_replica 8341 $RPA $OUT/server_R2cZv_1.log "--speculative-config '$SPEC1'"; Z51=$LAST_PID
+  boot_replica 8342 $RPB $OUT/server_R2cZv_2.log "--speculative-config '$SPEC1'"; Z52=$LAST_PID
+  if wait_up 8341 && wait_up 8342; then
+    log "R2cZv pair up ($Z51/$Z52)"
+    startup_lines $OUT/server_R2cZv_1.log $OUT/server_R2cZv_2.log
+    FORCE_SEED=0 bench_pair R2cZv_w0 60 120 8341 2 $OUT/server_R2cZv_1.log $OUT/server_R2cZv_2.log
+    for c in 120 126; do
+      FORCE_SEED=0 bench_pair R2cZv_c${c}t $((c/2)) $c 8341 2 $OUT/server_R2cZv_1.log $OUT/server_R2cZv_2.log
+    done
+    FORCE_SEED=0 bench_pair R2cZv_c126tr 63 126 8341 2 $OUT/server_R2cZv_1.log $OUT/server_R2cZv_2.log
+    FORCE_SEED=0 bench_pair R2cZv_c132t  66 132 8341 2 $OUT/server_R2cZv_1.log $OUT/server_R2cZv_2.log
+    FORCE_SEED=0 bench_pair R2cZv_c126tb 63 126 8341 2 $OUT/server_R2cZv_1.log $OUT/server_R2cZv_2.log
+    spec_metrics R2cZv_c126t 8341 8342
+  else
+    log "ABORT R2cZv boot failed"
+  fi
+  kill_srv $Z51; kill_srv $Z52
+  gpu_snap
+  log "Z5 phase done"
+  # R1-R4 verdicts computed HERE from the README's pre-registered thresholds.
+  $VENV/python - "$OUT" <<'EOF' >> $OUT/summary.txt
+import os, re, sys
+out = sys.argv[1]
+Z3_126, Z3_120, Z3_132 = 648.30, 673.34, 654.47   # Z3's k=1 arm, the claim under test
+def g(f, key):
+    if not os.path.exists(f):
+        return float("nan")
+    m = re.search(re.escape(key) + r"[^\n:]*:\s+([0-9.]+)", open(f).read())
+    return float(m.group(1)) if m else float("nan")
+def rep(tag, i):
+    return g(f"{out}/bench_{tag}_p{i}.log", "Output token throughput")
+def tot(tag):
+    return rep(tag, 1) + rep(tag, 2)
+def split(tag):
+    a, b = rep(tag, 1), rep(tag, 2)
+    if a != a or b != b or (a + b) == 0:
+        return float("nan")
+    return abs(a - b) / ((a + b) / 2) * 100
+TAGS = ["w0", "c120t", "c126t", "c126tr", "c132t", "c126tb"]
+print("== Z5: independent replication of the k=1 @126t notch (single arm, k=1) ==")
+_miss = [f"R2cZv_{t}" for t in TAGS if tot(f"R2cZv_{t}") != tot(f"R2cZv_{t}")]
+print(f"  completeness: {'ALL SIX PRESENT' if not _miss else 'INCOMPLETE -> ' + ', '.join(_miss)}")
+for t in TAGS:
+    v, s = tot(f"R2cZv_{t}"), split(f"R2cZv_{t}")
+    if v != v:
+        print(f"     {t:<8} MISSING"); continue
+    flag = "" if s != s or s <= 2.0 else "   <-- p1/p2 SPLIT OVER 2%"
+    print(f"     {t:<8} total {v:8.2f}   p1 {rep('R2cZv_'+t,1):8.2f}  p2 {rep('R2cZv_'+t,2):8.2f}"
+          f"   split {s:5.2f}%{flag}")
+v120, v126, v126r, v132, v126b = (tot(f"R2cZv_{t}") for t in
+                                  ("c120t", "c126t", "c126tr", "c132t", "c126tb"))
+print("== pre-registered verdicts ==")
+if v126 == v126:
+    ok = v126 < v120 and v126 < v132
+    print(f"   R1 (notch reproduces: @126t below both @120t and @132t): "
+          f"{'CONFIRMED' if ok else 'FALSIFIED'}   [@{126}t {v126:.2f} vs @120t {v120:.2f}, "
+          f"@132t {v132:.2f}; Z3 said {Z3_126:.2f}]")
+if v126 == v126 and v126r == v126r:
+    d = abs(v126r - v126) / v126 * 100
+    v = "CONFIRMED" if d <= 1.5 else ("FALSIFIED" if d > 2.5 else "AMBIGUOUS (1.5-2.5%)")
+    print(f"   R2 (in-place re-read stable <1.5%): {v}   [{v126:.2f} -> {v126r:.2f} = {d:.2f}%]")
+s126, s126r = split("R2cZv_c126t"), split("R2cZv_c126tr")
+if s126 == s126 and s126r == s126r:
+    ok = s126 <= 2.0 and s126r <= 2.0
+    print(f"   R3 (NOT a p1/p2 split, both <=2%): {'CONFIRMED' if ok else 'FALSIFIED'}"
+          f"   [@126t split {s126:.2f}%, @126tr split {s126r:.2f}%]")
+if v126 == v126 and v120 == v120:
+    a1, b1, a120, b120 = rep("R2cZv_c126t",1), rep("R2cZv_c126t",2), rep("R2cZv_c120t",1), rep("R2cZv_c120t",2)
+    ok = a1 < a120 and b1 < b120
+    print(f"   R4 (BOTH replicas lower at @126t than at @120t): {'CONFIRMED' if ok else 'FALSIFIED'}"
+          f"   [p1 {a120:.2f}->{a1:.2f}; p2 {b120:.2f}->{b1:.2f}]")
+if v126b == v126b:
+    print(f"   [descriptive, no verdict] @126tb (3rd reading, position 6) = {v126b:.2f}, "
+          f"split {split('R2cZv_c126tb'):.2f}%")
+print("   NOTE: deep-overload band. A notch is structure, not an operating point;")
+print("   nothing here revises any outward-facing number.")
+EOF
+fi
+
 # ---------- P20: FV — the whole four-factor chain on ONE seed ----------
 # The decomposition currently mixes pools: 量化 compares B0(702) to B1(702) —
 # fine — but 调度步长 compares B1(702) to B1b(701), and 布局 compares B1b(701) to
