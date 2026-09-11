@@ -1,0 +1,10 @@
+08:35:53 sweep6 start: TP2 anchor + 2x replica matrix
+08:39:24 TP2 up (pid 90548)
+08:42:44 TP2 phase done
+08:45:25 R2b pair up (93646/93647)
+08:48:08 R2b phase done
+08:50:58 R2c pair up (97353/97354)
+08:52:08 R2c phase done
+08:53:58 R2a pair up (100328/100329)
+08:55:10 R2a phase done
+08:55:10 ALL_DONE
