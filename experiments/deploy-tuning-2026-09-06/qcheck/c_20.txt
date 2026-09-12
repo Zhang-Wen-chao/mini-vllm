@@ -1,0 +1,34 @@
+We need answer in Chinese. User asks: 用贪心策略说明找零钱问题（面额 1,5,10,25）为什么贪心能得到最优解。 Need explain greedy optimal for coin system 1,5,10,25 (US coins). Need likely provide proof via exchange argument / canonical coin system. Need be careful: For denominations 1,5,10,25, greedy gives optimal number of coins for any amount? Yes US coin system is canonical. Need explain. Could use modular/interval proof. Need maybe define greedy: repeatedly take largest coin <= remaining. Need prove optimal.
+
+We need craft final answer. Let's think of rigorous but accessible proof.
+
+Denominations c = [1,5,10,25]. Greedy algorithm: for amount n, take floor(n/25) quarters, then dimes, nickels, pennies. Need show minimal coins.
+
+Approaches:
+1. Exchange argument: In any optimal solution, number of quarters is at least floor(n/25)? Actually optimal may use fewer quarters? Need show can transform optimal to greedy without increasing coins.
+- For pennies: any optimal uses at most 4 pennies, else replace 5 pennies by 1 nickel (fewer coins). Greedy uses n mod 5 pennies.
+- Nickels: any optimal uses at most 1 nickel? Wait if no dimes/quarters? For amount after quarters? In general, any optimal uses at most 1 nickel? If has 2 nickels, replace by 1 dime (fewer). So at most 1 nickel. Greedy uses 1 if remainder after dimes >=5.
+- Dimes: any optimal uses at most 2 dimes? 3 dimes = 30 can be replaced by 1 quarter + 1 nickel (2 coins) fewer. So at most 2 dimes. Greedy uses 0,1,2 dimes depending remainder after quarters.
+- Quarters: any optimal uses as many quarters as possible? Need show if amount >=25, optimal includes at least floor(n/25) quarters? Not exactly: e.g. n=30, floor=1, optimal 25+5 (1 quarter) yes. n=40, floor=1, optimal 25+10+5? 3 coins vs 4 dimes? 4 coins, so quarter. n=45, floor=1, optimal 25+10+10? 3 vs 45 pennies etc. n=50, floor=2, optimal 2 quarters. Could an optimal use fewer than floor(n/25) quarters? Suppose n=75, floor=3, could use 2 quarters + 5 dimes = 7 coins vs 3 quarters =3. No. Need prove.
+
+Maybe use lower bound: For any amount n, let q = floor(n/25). Need show any representation uses at least q + greedy(n mod 25) coins. Or show replacing non-greedy with greedy.
+
+Canonical proof: For coin systems sorted c1=1<c2=5<c3=10<c4=25. A sufficient condition for greedy optimal: for each i, c_i is multiple? Not exactly. There is known theorem: If for each i, c_i divides c_{i+1}? Here 5 divides 25, 10 doesn't divide 25. But still canonical.
+
+Could prove by cases on remainder modulo 25. Since greedy after quarters only handles 0-24. Need show for any n, optimal = q + optimal(n mod 25) maybe? Is it always optimal to take q quarters? Need prove. For n = 25q + r, 0<=r<25. Greedy uses q + g(r). Need show any solution uses at least q + g(r).
+
+One way: Show any 25 value requires at least 1 coin? Trivial. But if use fewer than q quarters, need compensate with smaller coins. Need lower bound on coins to make 25q+r.
+
+Could use dynamic programming values? For r 0..24, greedy coin counts:
+r:0 0
+1-4: r pennies (1-4)
+5-9: 1 nickel + (r-5) pennies (1-5? actually 5:1,6:2,7:3,8:4,9:5)
+10-14: 1 dime + (r-10) pennies (1-5)
+15-19: 1 dime + 1 nickel + pennies (2-6)
+20-24: 2 dimes + pennies (2-6)
+But maybe optimal for 24 is 2 dimes+4 pennies=6; alternative 1 quarter? no >24. 19: dime+nickel+4=6; 15: dime+nickel=2.
+
+Need prove for all n. Could use exchange:
+- In optimal solution, number of pennies <5, nickels <2, dimes <3 (as above). Thus the non-quarter part (pennies+nickels+dimes) has value < 3*10 + 2*5 + 4*1 = 44? Actually max value without quarters under constraints: 2 dimes (20) +1 nickel (5)+4 pennies (4)=29. Wait if dimes at most 2, nickels at most 1, pennies at most 4, total max 29. But if no quarters, amount can be large? For n large, need quarters. But constraints imply if total value n, number of quarters at least floor((n-29)/25)? Not enough.
+
+Maybe show in optimal, if value >=25, there is a quarter? Is that true? For 25, yes quarter. For 26, quarter+penny. Could optimal for 25 be 2 dimes+1 nickel (3 coins) not quarter, but not optimal. In an optimal solution, if no quarter and amount >=25, can replace some smaller coins by a quarter reducing count? Need show. If amount >=25 and no quarter, since dimes<=2, nickels<=1, pennies<=4, max value 29. So amount in [25,29]. For 25: 2 dimes+1 nickel (3) -> quarter (1). 26: 2 dimes+1 nickel+1 penny (4) -> quarter+penny (2). 27: 2 dimes+1 nickel+2 pennies (5) -> quarter+2 pennies (3). 28: 2 dimes+1 nickel+3 pennies (6) -> quarter+3 pennies (4). 29: 2 dimes+1 nickel+4 pennies (7) -> quarter+4 pennies (5). So any optimal with amount >=25 must have a quarter

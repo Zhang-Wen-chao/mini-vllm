@@ -1,0 +1,36 @@
+We need answer in Chinese likely. User asks: "12 个球有一个天平，其中一个球重量异常，最少称几次能找出坏球并判断轻重？" Classic 12 balls one odd (heavier or lighter), balance scale, minimum weighings to find bad ball and determine heavy/light. Answer: 3. Need explain strategy. Need be careful: "最少称几次" = minimum number of weighings. It is 3. Need provide method. Need maybe prove lower bound: each weighing 3 outcomes, 3 weighings 27 outcomes, need identify 24 possibilities (12 balls * 2). 2 weighings only 9 outcomes <24, so at least 3. Then give 3-weighing scheme.
+
+Need craft final with clear steps. Let's design a standard 12-ball solution. Need ensure correct and easy to follow.
+
+Classic: Label balls 1-12. First weigh 1,2,3,4 vs 5,6,7,8.
+Case A: balance. Odd among 9-12. Weigh 9,10,11 vs 1,2,3 (known good). If balance: 12 odd; weigh 12 vs 1 to determine heavy/light. If left heavy: one of 9,10,11 heavy. Weigh 9 vs 10: if balance 11 heavy; if 9 heavy 9 heavy; if 10 heavy 10 heavy. If left light: one of 9,10,11 light. Weigh 9 vs 10: if balance 11 light; if 9 light 9 light; if 10 light 10 light.
+
+Case B: first weigh left heavy (1,2,3,4 heavier than 5,6,7,8). Then odd among 1-8, with 1-4 possibly heavy, 5-8 possibly light. Need two weighings. Standard: second weigh 1,2,5 vs 3,6,9 (9 known good). Let's analyze.
+Initial: L = {1,2,3,4} heavy candidates; R = {5,6,7,8} light candidates.
+Second: weigh A: 1,2,5 vs 3,6,9.
+Outcomes:
+- Balance: then 1,2,3,5,6 normal. Odd among 4 (heavy) or 7 or 8 (light). Third: weigh 7 vs 8. If balance: 4 heavy. If 7 lighter: 7 light. If 8 lighter: 8 light. (If 7 vs 8: since both light candidates, the lighter side is bad; if balance 4 heavy.)
+- Left heavy (1,2,5 > 3,6,9): possibilities? Let's compute. Initial candidates: 1H,2H,3H,4H,5L,6L,7L,8L. In second: left has 1,2,5; right has 3,6,9. If 1H or 2H -> left heavy. If 5L -> left light (not). If 3H -> right heavy (not). If 6L -> right light => left heavy? Wait if 6 is light on right, right side lighter, so left heavy. Yes 6L gives left heavy. 4H,7L,8L not on scale -> balance? If not on scale, balance. So left heavy outcome: 1H,2H,6L. Third: weigh 1 vs 2. If balance: 6 light. If 1 heavier: 1 heavy. If 2 heavier: 2 heavy.
+- Right heavy (1,2,5 < 3,6,9): possibilities: 3H (right heavy), 5L (left light => right heavy). 1H/2H/6L not. So third: weigh 5 vs 9 (known good). If 5 lighter: 5 light. If balance: 3 heavy. (No other). Or weigh 3 vs 9: if 3 heavy then 3 heavy else 5 light. Need one weighing.
+
+Case C: first weigh left light (1,2,3,4 lighter than 5,6,7,8). Symmetric to case B. Could state symmetric: swap heavy/light roles or use same scheme with labels? Need provide explicit or say symmetric. For completeness, can give explicit: If first left light, then 1-4 possibly light, 5-8 possibly heavy. Second weigh 1,2,5 vs 3,6,9. Analyze:
+Initial: 1L,2L,3L,4L,5H,6H,7H,8H.
+Second: left 1,2,5; right 3,6,9.
+- Balance: odd among 4L,7H,8H. Third: weigh 7 vs 8. If balance: 4 light. If 7 heavier: 7 heavy. If 8 heavier: 8 heavy.
+- Left heavy: possibilities? 5H (left heavy), 3L (right light => left heavy). 1L/2L would left light; 6H right heavy. So third: weigh 5 vs 9. If 5 heavy: 5 heavy; if balance: 3 light.
+- Right heavy: possibilities: 1L,2L,6H. Third: weigh 1 vs 2. If balance: 6 heavy; if 1 lighter: 1 light; if 2 lighter: 2 light.
+This is complete.
+
+Need maybe mention "最少" proof: 2 weighings insufficient because 3^2=9 < 24. But wait: Is there any nuance: We need find bad ball and judge heavy/light. There are 24 possible states. Each weighing has 3 outcomes, so 2 weighings max 9 leaves, cannot distinguish 24. Thus at least 3. Since 3 possible, minimum 3.
+
+Need answer in Chinese. Could include table. Need be concise but thorough. The user likely expects answer. We can provide "3次" and method.
+
+Need ensure no hidden issue: balance scale can compare equal numbers? Usually yes. We can weigh 4 vs 4, 3 vs 3, 1 vs 1. The scheme uses known good balls after first balance. In unbalanced cases, 9-12 are known good? In first unbalanced, 9-12 are known normal because odd among 1-8. Yes.
+
+Need maybe present a more elegant ternary coding solution? But step-by-step is fine.
+
+Let's verify all cases.
+
+First weigh: 1 2 3 4 vs 5 6 7 8.
+Case balance: 9-12 suspect. Weigh 9 10 11 vs 1 2 3.
+- balance: 12 suspect. Weigh 

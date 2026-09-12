@@ -1,0 +1,25 @@
+We need answer in Chinese likely. User asks: 写 SQL：从 orders 表（user_id, amount, created_at）查 2026 年 8 月消费总额最高的前 5 名用户。
+Need provide SQL. Need consider date filtering. Could use created_at >= '2026-08-01' AND created_at < '2026-09-01' for index-friendly. Group by user_id sum(amount) order by total desc limit 5. Maybe include total. Need maybe if created_at is date or datetime. Could mention if only date use BETWEEN '2026-08-01' AND '2026-08-31'. Need final concise. Ensure no hidden issues: top 5 users by total consumption in Aug 2026. SQL:
+SELECT user_id, SUM(amount) AS total_amount
+FROM orders
+WHERE created_at >= '2026-08-01' AND created_at < '2026-09-01'
+GROUP BY user_id
+ORDER BY total_amount DESC
+LIMIT 5;
+If ties? Could mention if need tie handling use window rank. But likely simple.
+Need final in Chinese.
+</think>
+
+```sql
+SELECT
+    user_id,
+    SUM(amount) AS total_amount
+FROM orders
+WHERE created_at >= '2026-08-01'
+  AND created_at <  '2026-09-01'
+GROUP BY user_id
+ORDER BY total_amount DESC
+LIMIT 5;
+```
+
+说明：使用 `created_at >= '2026-08-01' AND created_at < '2026-09-01'` 可以完整覆盖 2026 年 8 月，并且对时间字段更友好。

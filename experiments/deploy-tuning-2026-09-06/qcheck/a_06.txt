@@ -1,0 +1,10 @@
+We need answer in Chinese likely. User asks: pool, inlet 5 t/h, outlet 3 t/h, capacity 40 t, initial 10 t, how long to fill? Need compute net inflow 2 t/h, need 30 t, time 15 h. But consider if outlet open? It says 出水管每小时出 3 吨, likely both open. If outlet closed? Wording implies both. Need maybe mention if出水管同时开放. If outflow cannot exceed current? initial 10, net positive. 15 hours. Need final concise. Ensure no hidden trick: capacity 40, initial 10, net 2, 15h. Could mention if出水管关闭 then 6h. But likely answer 15. Final in Chinese.
+</think>
+
+如果进水管和出水管同时开着：
+
+- 净进水速度：5 − 3 = 2 吨/小时  
+- 还需灌入：40 − 10 = 30 吨  
+- 所需时间：30 ÷ 2 = 15 小时  
+
+所以，**15 小时后灌满**。

@@ -1,0 +1,4 @@
+We need answer in Chinese likely. User asks: "strawberry 这个单词里有几个 r？" Need count r in strawberry. Let's spell: s t r a w b e r r y. Letters: s(1), t(2), r(3), a(4), w(5), b(6), e(7), r(8), r(9), y(10). There are 3 r's? positions 3, 8, 9 = 3. Need final concise. Ensure no hidden trick? "strawberry" has 'r' after t, and double r near end: total 3. Answer in Chinese.
+</think>
+
+strawberry 里有 **3 个 r**。

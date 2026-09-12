@@ -1,0 +1,23 @@
+We need answer in Chinese. User asks: 用贪心策略说明找零钱问题（面额 1,5,10,25）为什么贪心能得到最优解。 Need explain greedy optimal for coin system 1,5,10,25 (US cents). Need likely provide proof via exchange argument / canonical coin system. Need be careful: Greedy: take largest coin <= remaining. Need show minimizes number of coins. We can use modular/interval argument. Need maybe mention not all coin systems greedy works, but this one does. Need rigorous enough.
+
+We need craft final. Let's think proof options.
+
+Coin denominations: 1,5,10,25. Greedy algorithm: for amount n, use floor(n/25) quarters, then dimes, nickels, pennies. Need prove optimal.
+
+Approach 1: Show any optimal solution can be transformed to greedy without increasing coin count.
+
+Let n. Let q = floor(n/25). Greedy uses q quarters. Need show there is optimal with q quarters. Suppose optimal uses < q quarters. Then remaining amount n - 25k where k<q. Since n >= 25q, if k <= q-1, remaining >= 25q -25(q-1)=25. Need represent at least 25 using coins <25 (dimes, nickels, pennies). Minimum number of coins to make 25 without quarters? 3 dimes + 1 nickel? 31? Actually 25 with 10,5,1: 10+10+5 = 3 coins. So replacing 3 coins by 1 quarter reduces count. But if optimal uses <q quarters, it must make at least 25 with smaller coins, requiring at least 3 coins. Replacing those 3 by one quarter reduces total by 2, contradiction to optimal. Need ensure can identify 3 coins summing 25? If smaller coins total at least 25, does there always exist subset summing 25? Not necessarily? Example 10+10+1+... total 25? Need subset? We can argue any representation of amount >=25 using 1,5,10 has at least 3 coins; but to replace with quarter, need exact 25 subset. If total smaller coins amount S >=25, can we always find subset sum 25? With denominations 1,5,10, yes? Let's check: If S>=25, can we select coins sum 25? Since pennies allow adjust. But if only 10s and 5s? 10+10+5=25. If 10+10+10=30, subset 25? no (10,10,10 cannot make 25). But if total smaller coins >=25 and no subset 25, e.g. three dimes =30. But then optimal with no quarters for 30 uses 3 dimes; greedy uses 1 quarter + 1 nickel =2 coins, so not optimal. But exchange: replace 3 dimes by quarter+nickel reduces count. More generally, if smaller coins total S >=25, can we transform to include a quarter without increasing count? Need show any multiset of 1,5,10 coins with total >=25 can be modified to include a quarter and total same with no more coins. Is that true? Let's test: 10+10+10 (3 coins, total 30) -> 25+5 (2 coins) yes. 10+10+5+5 (4, total30) -> 25+5 (2) yes. 10+10+1*5? total25? 10+10+1*5 = 7 coins -> 25 (1). 10+5*3 = 4 coins total25 -> 25 (1). 10+10+1*3? total23 not >=25. Need proof.
+
+Alternative: Use lower bound by intervals. For any amount n, greedy count g(n). Show any representation has at least g(n) coins. Could use induction and properties.
+
+Canonical coin system proof: For denominations c1=1<c2=5<c3=10<c4=25. Greedy optimal if for each i, c_i is multiple? Not sufficient. There is known condition: For each i, c_i <= c_{i+1} and c_i divides? Actually 1,5,10,25: 5 divides 10, 10? 25 not multiple of 10. But canonical.
+
+Could prove by considering modulo 25. Since quarter is largest. For n = 25q + r, 0<=r<25. Greedy uses q + g(r). Need show any optimal uses at least q + g(r). If uses k quarters. If k >= q+1, then amount from quarters > n? impossible if other coins positive? Actually k can be q+1 only if r negative? no, total quarters 25(q+1)>n, impossible. So k <= q. Need show if k <= q-1, then non-quarter coins amount at least 25 + r. Need lower bound on number of non-quarter coins to make amount >=25+r? But not simply g(25+r) because can use smaller coins. Need show min coins to make amount m using 1,5,10 is at least 1 + g(m-25)? Maybe.
+
+Maybe prove by induction on n. Let G(n) greedy count. Need show any optimal O(n) >= G(n). For n<25, denominations 1,5,10. Greedy optimal easy: use max dimes, then nickels, pennies. For n>=25: Let q=floor(n/25), r=n-25q. Greedy G(n)=q+G(r). Consider optimal solution. If it uses q quarters, remaining r made optimally? At least G(r) by induction (r<25). If uses fewer than q quarters, say q-1 or less. Then remaining amount n-25k >= 25 + r (if k=q-1) or more. Need lower bound: any representation of amount m >= 25+r using 1,5,10 requires at least 1 + G(r) + (q-k-1?)? Hmm.
+
+Maybe use exchange to show optimal can be assumed to use as many quarters as possible. Need robust proof.
+
+Let's attempt exchange argument:
+
+Lemma 1: In an optimal solution for any amount, the number of pennies is <5, nickels <2? Actually greedy ensures <5 pennies, <2 nickels? For 1,5,10,25, optimal will not have 5 pennies (replace by nickel), not 2 nickels (replace by dime), not 1

@@ -1,0 +1,20 @@
+用户要求将中文句子翻译成英文：“这个方案在低并发场景下收益有限，需要实测验证。”
+
+需要给出自然、专业的英文翻译。语境像是技术/工程方案评估。中文含义：该方案在低并发场景下收益/好处有限，需要通过实际测试来验证。
+
+可选翻译：
+- This solution offers limited benefits in low-concurrency scenarios and needs to be validated through real-world testing.
+- The benefits of this approach are limited in low-concurrency scenarios, so it needs to be verified with actual testing.
+- This approach yields limited gains under low-concurrency conditions and requires empirical validation.
+
+“实测验证”可译为 empirical validation, real-world testing, actual testing, measured testing。技术文档中常用 “requires empirical validation” 或 “needs to be validated through actual testing”。
+
+“收益有限”可译为 limited benefits/gains/returns。方案 approach/solution。低并发场景 low-concurrency scenarios/under low concurrency。
+
+最佳：This approach offers limited benefits in low-concurrency scenarios and requires empirical validation.
+或更自然：The benefits of this approach are limited in low-concurrency scenarios, so it needs to be validated through actual testing.
+
+用户只要求翻译，可给一个推荐译文，也可给备选。简洁回答即可。
+</think>
+
+This approach offers limited benefits in low-concurrency scenarios and requires empirical validation.

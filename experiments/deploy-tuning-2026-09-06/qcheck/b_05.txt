@@ -1,0 +1,76 @@
+We need answer in Chinese. User asks: 简述 Transformer 中 LayerNorm 的作用，以及 Post-LN 和 Pre-LN 的区别。 Need provide concise but thorough. Need final only. Let's craft: LayerNorm normalizes across feature dimension for each token, stabilizes activations, reduces internal covariate shift, improves training, allows larger LR, mitigates vanishing/exploding. In Transformer: x = LN(x + Sublayer(x)) post-LN original; pre-LN x = x + Sublayer(LN(x)). Differences: placement, residual stream, training stability, initialization, gradient flow, performance. Post-LN: normalization after residual addition; original Transformer; can be less stable, needs warmup, smaller LR, sometimes better final performance if tuned. Pre-LN: normalize before sublayer; residual path clean, smoother gradients, easier training, can use larger LR, no warmup often, but sometimes slightly lower final performance or needs extra LN before final output. Also mention final LN in pre-LN. Maybe include formulas. Need answer in Chinese. Ensure not too long but enough.
+</think>
+
+**LayerNorm 的作用**
+
+Transformer 中的 LayerNorm 通常对每个 token 的特征维度做归一化，使激活值的均值接近 0、方差接近 1。主要作用包括：
+
+1. **稳定训练**：减少不同层、不同 token 的激活值尺度差异，降低训练不稳定。
+2. **改善梯度传播**：使梯度更平滑，缓解梯度消失或爆炸。
+3. **允许更大学习率**：训练更稳定后，通常可以使用更大的学习率。
+4. **提升收敛速度**：有助于模型更快收敛。
+
+---
+
+## Post-LN 和 Pre-LN 的区别
+
+### 1. Post-LN
+
+原始 Transformer 使用的是 **Post-LN**，即先做子层计算，再加残差，最后做 LayerNorm：
+
+\[
+x = \text{LayerNorm}(x + \text{Sublayer}(x))
+\]
+
+例如：
+
+\[
+x = \text{LayerNorm}(x + \text{Attention}(x))
+\]
+
+特点：
+
+- 是原始 Transformer 的结构。
+- 训练相对不稳定，通常需要学习率 warmup。
+- 对学习率、初始化更敏感。
+- 如果调参得当，最终效果可能略好。
+
+---
+
+### 2. Pre-LN
+
+**Pre-LN** 是先对输入做 LayerNorm，再进入子层，然后加残差：
+
+\[
+x = x + \text{Sublayer}(\text{LayerNorm}(x))
+\]
+
+例如：
+
+\[
+x = x + \text{Attention}(\text{LayerNorm}(x))
+\]
+
+特点：
+
+- 残差连接更“干净”，梯度传播更稳定。
+- 训练更稳定，通常不需要 warmup 或 warmup 很短。
+- 可以使用更大的学习率。
+- 实现更简单，训练更友好。
+- 有时最终性能略低于调优后的 Post-LN，但差距通常不大。
+
+---
+
+## 简单总结
+
+| 对比项 | Post-LN | Pre-LN |
+|---|---|---|
+| 结构 | `LN(x + Sublayer(x))` | `x + Sublayer(LN(x))` |
+| 训练稳定性 | 相对较差 | 更好 |
+| 学习率 | 通常需要 warmup | 更稳定，可更大 |
+| 调参难度 | 较高 | 较低 |
+| 原始 Transformer | 是 | 否 |
+| 常见使用 | 原始模型、部分调优模型 | 现代大模型更常见 |
+
+一句话概括：  
+**Post-LN 是原始 Transformer 的做法，效果可能更好但训练更敏感；Pre-LN 把 LayerNorm 放在子层前，训练更稳定，是现代 Transformer 更常用的结构。**

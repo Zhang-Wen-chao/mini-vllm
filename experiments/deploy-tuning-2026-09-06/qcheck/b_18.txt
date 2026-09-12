@@ -1,0 +1,52 @@
+We need answer in Chinese likely. User: "12 个球有一个天平，其中一个球重量异常，最少称几次能找出坏球并判断轻重？" Classic 12 balls one odd, balance scale, minimum weighings to find odd ball and whether heavy/light. Answer: 3. Need explain strategy. Need be careful: "最少称几次" = minimum number of weighings. It is 3. Need provide method. Need maybe prove lower bound: each weighing 3 outcomes, 3^2=9 < 24 possibilities (12 balls * heavy/light), so at least 3. Then show 3 weighings possible. Need give explicit scheme.
+
+Need craft final with clear steps. Let's design a standard 3-weighing solution.
+
+Label balls 1-12. We need a decision tree.
+
+Common solution:
+First weighing: 1,2,3,4 vs 5,6,7,8.
+Case A: balance. Odd among 9-12. Second: 9,10,11 vs 1,2,3 (known good). If balance: 12 odd; third weigh 12 vs 1 to determine heavy/light. If left heavy: one of 9,10,11 heavy. Third: 9 vs 10; if balance 11 heavy else heavier is odd. If left light: one of 9,10,11 light. Third: 9 vs 10; if balance 11 light else lighter is odd.
+
+Case B: first left heavy (1,2,3,4 heavier than 5,6,7,8). Then odd is among 1-8, with 1-4 possibly heavy, 5-8 possibly light. 9-12 good. Need second weighing to reduce. Standard: weigh 1,2,5 vs 3,6,9? Let's recall. Need a scheme that covers all.
+
+Let's derive robust decision tree.
+
+After first: L = {1,2,3,4} suspect heavy; R = {5,6,7,8} suspect light. Good: 9-12.
+Second weighing options. Need partition into 3 outcomes each with at most 3 possibilities? Actually after second, third can distinguish up to 3 possibilities if each outcome has <=3 and known direction? Need design.
+
+Classic: Weigh 1,2,5 vs 3,6,9.
+Outcomes:
+- If balance: suspects not in weighed? Let's compute. Weigh A: 1,2,5 (left) vs 3,6,9 (right). Known 9 good.
+Initial possibilities: 1H,2H,3H,4H,5L,6L,7L,8L.
+If balance: possibilities consistent: 4H,7L,8L? Let's check:
+1H would make left heavy -> not balance.
+2H left heavy.
+3H right heavy.
+4H not weighed -> balance.
+5L left light -> right heavy? left has 5 light, so left lighter -> not balance.
+6L right light -> left heavy -> not balance.
+7L not weighed -> balance.
+8L not weighed -> balance.
+So balance leaves {4H,7L,8L}. Third: weigh 7 vs 8. If balance -> 4H. If 7 lighter -> 7L. If 8 lighter -> 8L. Good.
+- If left heavy: possibilities: 1H,2H,6L? Check: 1H left heavy; 2H left heavy; 3H right heavy (not); 4H balance; 5L left light (not); 6L right light => left heavy; 7L balance; 8L balance. So {1H,2H,6L}. Third: weigh 1 vs 2. If balance -> 6L. If 1 heavier -> 1H. If 2 heavier -> 2H. Good.
+- If right heavy: possibilities: 3H,5L? Check: 3H right heavy; 5L left light => right heavy; others? 1H left heavy, 2H left heavy, 4H balance, 6L left heavy, 7L balance, 8L balance. So {3H,5L}. Third: weigh 3 vs 9 (good). If 3 heavy -> 3H; if balance -> 5L. (Or weigh 5 vs 9: if 5 light -> 5L else 3H). Good.
+
+This works. If first right heavy symmetric: can either swap labels or use same scheme with roles reversed. Need present maybe: If first weighing right side heavier, same method with left/right swapped: suspect 5-8 heavy, 1-4 light. Or provide explicit second weighing? Could say symmetric. But to be complete, maybe give explicit for first right heavy: weigh 5,6,1 vs 7,2,9? Let's derive symmetric by swapping labels 1<->5,2<->6,3<->7,4<->8? If first right heavy, suspects: 5,6,7,8 heavy; 1,2,3,4 light. Use analogous: weigh 5,6,1 vs 7,2,9. Let's test.
+Initial: 5H,6H,7H,8H,1L,2L,3L,4L.
+Weigh left: 5,6,1; right:7,2,9.
+Balance: 8H,3L,4L? Check 5H left heavy;6H left heavy;7H right heavy;8H balance;1L left light -> right heavy;2L right light -> left heavy;3L balance;4L balance. Yes.
+Left heavy: 5H,6H,2L? Check 5H left heavy;6H left heavy;7H right heavy;8H balance;1L left light;2L right light -> left heavy;3L balance;4L balance. Third 5 vs 6: balance ->2L; heavier -> that H.
+Right heavy: 7H,1L. Third 7 vs 9: heavy ->7H; balance ->1L. Good.
+
+Alternatively present general: If first unbalanced, suppose left heavy; if right heavy, interchange left/right in the following. That's acceptable.
+
+Need answer: 3 times. Need maybe mention "最少" proof lower bound. Need maybe mention if only find ball not light/heavy maybe 3? But question asks find and judge heavy/light. 3.
+
+Need ensure no hidden nuance: 12 balls, one abnormal weight (could be heavier or lighter), balance scale. Minimum weighings? 3. Need maybe if "异常" means unknown heavy/light. Yes.
+
+Need final in Chinese. Could include table.
+
+Let's craft final:
+- 结论：3 次。
+- 下界：每次

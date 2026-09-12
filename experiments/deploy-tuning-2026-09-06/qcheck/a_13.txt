@@ -1,0 +1,40 @@
+We need answer in Chinese likely. User asks: 求 1 到 100 中所有能被 3 整除但不能被 5 整除的数之和。 Need compute sum of numbers 1..100 divisible by 3 but not by 5. Need provide solution. Let's compute carefully.
+
+Numbers divisible by 3 up to 100: 3,6,...,99. Count floor(100/3)=33. Sum = 3*(1+...+33)=3*33*34/2=3*561=1683.
+Need subtract those divisible by both 3 and 5 i.e. 15 up to 100: 15,30,45,60,75,90. Count floor(100/15)=6. Sum = 15*(1+...+6)=15*21=315.
+Result = 1683-315=1368.
+Check alternative: multiples of 3 not 5. Yes.
+Need final concise with steps. Ensure no hidden issue: 1 to 100 inclusive. 100 not divisible by 3. Good.
+</think>
+
+1 到 100 中能被 3 整除的数有：
+
+\[
+3,6,9,\ldots,99
+\]
+
+共有 \(\left\lfloor \frac{100}{3} \right\rfloor = 33\) 个，和为：
+
+\[
+3(1+2+\cdots+33)=3\cdot \frac{33\cdot34}{2}=1683
+\]
+
+其中同时能被 5 整除的数，即能被 15 整除的数有：
+
+\[
+15,30,45,60,75,90
+\]
+
+共有 6 个，和为：
+
+\[
+15(1+2+\cdots+6)=15\cdot21=315
+\]
+
+所以能被 3 整除但不能被 5 整除的数之和为：
+
+\[
+1683-315=1368
+\]
+
+答案：\(\boxed{1368}\)

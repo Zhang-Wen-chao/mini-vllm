@@ -1,0 +1,36 @@
+用户要求：用面向对象的思想描述一个电梯调度系统的类设计（只列类名和核心方法）。需要用中文回答。需要只列类名和核心方法，可能不需要详细解释，但可以简洁。需要设计合理：Elevator, ElevatorSystem/Scheduler, Request, Floor, Direction, Passenger? 核心方法：request, dispatch, move, open/close, update, getElevator, assignRequest, calculateCost, etc. 保持简洁。
+</think>
+
+- **Elevator**
+  - `moveTo(int targetFloor)`
+  - `openDoors()`
+  - `closeDoors()`
+  - `getCurrentFloor()`
+  - `getDirection()`
+  - `setDirection(Direction direction)`
+  - `isAvailable()`
+
+- **ElevatorScheduler**
+  - `addRequest(Request request)`
+  - `dispatch()`
+  - `assignElevator(Request request)`
+  - `calculateCost(Elevator elevator, Request request)`
+  - `getElevators()`
+
+- **Request**
+  - `getStartFloor()`
+  - `getTargetFloor()`
+  - `getDirection()`
+  - `isCompleted()`
+  - `setCompleted(boolean completed)`
+
+- **Floor**
+  - `getFloorNumber()`
+  - `getRequests()`
+  - `addRequest(Request request)`
+  - `removeRequest(Request request)`
+
+- **Direction**
+  - `UP`
+  - `DOWN`
+  - `IDLE`

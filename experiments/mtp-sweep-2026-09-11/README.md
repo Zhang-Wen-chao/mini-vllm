@@ -3075,7 +3075,7 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
 | `sweep3/summary.txt` + `bench_C2b_*.log` | C2b 臂结果（sched 排除法） |
 | `sweep3/engine_stats_{K2,M2,C2b}_c48.txt` | **容量墙实锤**：spec 臂 Running 16-17 / usage 90-96% vs K2 满载 48 |
 | `sweep4/`（C4 全套：summary/bench×2/engine_stats×2/specmetrics×2/greedy/startup_lines） | **len 4096 阴性对照**：@48 298.21（<340 判据）、Running 仍 16-17、KV 字节同 9.28 GiB、C2 vs C4 贪心 8/8 |
-| `sweep5/` | W4 全套：summary/bench×2/engine_stats×2/specmetrics×2/greedy/startup_lines/**ceval_W4.log**（路径脱敏同上） |
+| `sweep5/` | W4 全套：summary/bench×2/engine_stats×2/specmetrics×2/greedy/startup_lines/**ceval_W4.log**（路径脱敏同上）/ **`int4_calib.log`**（GPTQ 标定全过程原始输出，2026-09-12 从测量机补入） |
 | `mtp_bench6.sh` | sweep6 编排：TP2 锚点 + R2b/R2c/R2a 副本对四相（docstring 含臂设计与邻座条件） |
 | `mtp_bench7.sh` | sweep7 编排（B0/B1/R2c/R2b/B0p/FV + 夜跑 Z2–Z7 全部相位块）。**2026-09-12 补进清单**——文件一直在库里，只是从没被列进来 |
 | `sweep6/` | 2 卡部署矩阵全套：summary（含 nan bug 现场）/bench×10/engine_stats×4/startup_lines（池打印 129,706 vs 历史 136,533 的邻座足迹证据）/gpu_snapshots×5/specmetrics×2 |
@@ -3121,6 +3121,14 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
 > 「库里的脚本清单」对「机器上的脚本清单」，不能只看证据文件齐不齐。**
 > （另注：这些脚本与 `mtp_bench7.sh` 一样**带占位符、不能原样执行**，
 > 它们是协议记录而非可运行产物；复跑需先把占位符换回真路径。）
+
+> **同一次排查还查出另一个缺口（已补）**：**MTP 轮之前的那一轮部署调优**
+> （2026-09-06，ABBA 配对 / 20 题土回归 / C-Eval）的脚本与证据**同样只在测量机上**，
+> 从未归档。已补成平级目录 **`../deploy-tuning-2026-09-06/`**（879 文件 / 4.3 MB）——
+> 那一轮当时没有归档约定，所以补回来的是「还在机器上、且认得出归属」的部分，
+> 缺什么在那份 README 的「本目录没有的」里逐条列着。
+> **两轮合起来看，`experiments/` 下这两份就是这条线在测量机上的全部足迹，
+> 至此没有唯一副本了。**
 
 对照记录：TP2 bf16 基线数字来自部署实验同窗 ABBA（@16 284.9±6.5 / @48 350.2±3.3）。
 **⚠️ 这两行跨窗引用前先读坑 17**：本窗重测为 @16 239.61 / @48 375.09，@16 差

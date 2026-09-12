@@ -1,0 +1,24 @@
+We need answer in Chinese likely. User asks: "9.11 和 9.8 哪个大？请一步步比较。" Need compare decimals. Need be careful: 9.11 vs 9.8. As decimal numbers, 9.8 = 9.80, so 9.80 > 9.11. But possible confusion with version numbers? The question likely decimal. Need step-by-step. Final concise.
+</think>
+
+我们一步一步比较 **9.11** 和 **9.8**：
+
+1. **先看整数部分**  
+   - 9.11 的整数部分是 **9**  
+   - 9.8 的整数部分也是 **9**  
+   所以整数部分一样大。
+
+2. **再看小数部分**  
+   为了方便比较，可以把它们写成相同的小数位数：  
+   - 9.11 = **9.11**  
+   - 9.8 = **9.80**
+
+3. **比较小数点后第一位**  
+   - 9.11 的小数点后第一位是 **1**  
+   - 9.80 的小数点后第一位是 **8**
+
+   因为 **8 > 1**，所以 **9.80 > 9.11**。
+
+因此：
+
+**9.8 比 9.11 大。**

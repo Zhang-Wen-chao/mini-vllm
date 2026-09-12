@@ -1,0 +1,70 @@
+We need answer in Chinese. User asks: 简述 Transformer 中 LayerNorm 的作用，以及 Post-LN 和 Pre-LN 的区别。 Need provide concise but thorough. Need final. Let's craft: LayerNorm normalizes across feature dimension for each token, stabilizes activations, reduces internal covariate shift, improves training, allows larger LR. In Transformer: x = LN(x + Sublayer(x)) post-LN; pre-LN: x = x + Sublayer(LN(x)). Differences: placement, residual stream, training stability, gradient flow, initialization, performance. Post-LN original Transformer, final output after LN; can be slightly better final accuracy if tuned, but harder to train, needs warmup, sensitive to depth. Pre-LN more stable, easier, no warmup often, gradients smoother, residual stream unnormalized, often used in deep models; may need final LN before output. Also mention variants: Post-LN: LN after residual addition; Pre-LN: LN before sublayer. Maybe include formulas. Need answer in Chinese. Ensure not too long but enough.
+</think>
+
+**LayerNorm 的作用**
+
+在 Transformer 中，LayerNorm 通常对每个 token 的特征维度做归一化，即把该 token 的隐藏状态均值拉为 0、方差拉为 1，再缩放和平移。主要作用是：
+
+1. **稳定训练**：减少各层激活值分布波动，使训练更稳定。
+2. **缓解梯度问题**：让梯度传播更平滑，降低梯度爆炸/消失风险。
+3. **提高训练效率**：通常可以使用更大的学习率，收敛更快。
+4. **增强模型鲁棒性**：对初始化、学习率等超参数更不敏感。
+
+---
+
+## Post-LN 和 Pre-LN 的区别
+
+### 1. Post-LN
+
+Post-LN 是原始 Transformer 中常用的结构：
+
+\[
+x = \text{LayerNorm}(x + \text{Sublayer}(x))
+\]
+
+也就是先做子层计算，例如 Attention 或 FFN，再加上残差，最后做 LayerNorm。
+
+**特点：**
+
+- 残差连接之后再做归一化。
+- 原始 Transformer 使用这种方式。
+- 如果调参得当，最终精度可能略好。
+- 但训练相对不稳定，通常需要学习率 warmup。
+- 对较深的 Transformer 更敏感，容易出现训练不稳定。
+
+---
+
+### 2. Pre-LN
+
+Pre-LN 的结构是：
+
+\[
+x = x + \text{Sublayer}(\text{LayerNorm}(x))
+\]
+
+也就是先对输入做 LayerNorm，再进入 Attention 或 FFN，最后加残差。
+
+**特点：**
+
+- 残差连接保持“干净”，主路径上的信号更稳定。
+- 训练更稳定，通常不需要 warmup 或 warmup 要求更低。
+- 梯度传播更平滑，适合较深的 Transformer。
+- 实际中常用于 BERT、GPT 等现代大模型。
+- 有时需要在模型最后再加一个 LayerNorm，用于输出前稳定表示。
+
+---
+
+## 简单总结
+
+| 对比项 | Post-LN | Pre-LN |
+|---|---|---|
+| 结构 | `LN(x + Sublayer(x))` | `x + Sublayer(LN(x))` |
+| 训练稳定性 | 相对较差 | 更好 |
+| 是否需要 warmup | 通常需要 | 通常不需要或要求较低 |
+| 适合深度 | 较浅模型更常见 | 更适合深层模型 |
+| 原始 Transformer | 使用 Post-LN | 后来更常用 |
+| 精度 | 调好后可能略优 | 通常接近，且更稳定 |
+
+一句话概括：
+
+**Post-LN 是原始 Transformer 的做法，精度可能略好但训练更敏感；Pre-LN 更稳定、更容易训练，因此现代 Transformer 更常用 Pre-LN。**

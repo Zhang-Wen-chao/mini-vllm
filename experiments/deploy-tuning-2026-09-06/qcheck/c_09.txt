@@ -1,0 +1,10 @@
+We need answer in Chinese likely. User: 3 red 5 blue, draw two without replacement, probability both blue? Give fraction. Need compute: total 8 balls, choose 2: C(8,2)=28. Blue choose 2: C(5,2)=10. Probability 10/28=5/14. Or sequential 5/8*4/7=20/56=5/14. Need final concise with fraction. Ensure no hidden issues. Final in Chinese.
+</think>
+
+概率为：
+
+\[
+\frac{5}{8}\times\frac{4}{7}=\frac{20}{56}=\frac{5}{14}
+\]
+
+所以答案是 **\(\frac{5}{14}\)**。

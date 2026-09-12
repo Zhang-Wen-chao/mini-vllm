@@ -1,0 +1,28 @@
+用户用中文询问：“简述 KV cache 在自回归解码中的作用，以及为什么能加速。” 需要回答中文。需要解释 KV cache 在 Transformer 自回归生成中的作用：缓存之前 token 的 K/V，避免每步重新计算所有历史 token 的 K/V；只计算新 token 的 Q/K/V，并用缓存 K/V 做 attention。加速原因：自回归解码每步若不用 cache 需要对长度 t 序列做 O(t^2) attention 或 O(t) 计算 K/V，总 O(n^2) 或更高；用 cache 后每步主要计算新 token 与历史 K/V 的 attention，计算量随步长线性增长，总 O(n^2) 但常数小？更准确：无 cache 每步重新计算前缀 K/V 和 attention，总计算 O(n^3) 或 O(n^2) 取决于实现；有 cache 每步 O(t) attention 和 O(1) 新 K/V，总 O(n^2)，且避免重复矩阵乘。还要提显存/带宽：减少重复计算，但增加显存占用；推理中常是 memory-bound，cache 可复用，减少 FLOPs。可简述公式：第 t 步 q_t 与 K_{1:t-1}, V_{1:t-1} 点积，softmax 加权 V。注意 KV cache 只缓存 K 和 V，不缓存 Q，因为 Q 只用于当前 token 查询。也可提 prefill 阶段一次性计算并缓存 prompt 的 K/V，decode 阶段逐 token 追加。最终简洁但完整。
+</think>
+
+KV cache 是 Transformer 自回归解码时用来缓存历史 token 的 Key 和 Value 的机制。
+
+在生成第 \(t\) 个 token 时，模型需要让当前 token 的 Query 与之前所有 token 的 Key 做注意力计算，并用对应的 Value 加权求和：
+
+\[
+\text{Attention}(Q_t, K_{1:t-1}, V_{1:t-1})
+\]
+
+如果没有 KV cache，每生成一个新 token，都要重新计算前面所有 token 的 Key 和 Value，甚至重新做一遍注意力计算。  
+有了 KV cache，就可以把之前 token 的 \(K\) 和 \(V\) 保存下来，每步只计算当前新 token 的 \(Q, K, V\)，然后把新的 \(K, V\) 追加到缓存中。
+
+它能加速的原因是：
+
+1. **避免重复计算历史 token 的 K/V**  
+   自回归解码是逐 token 生成的，历史 token 的表示不会变，因此它们的 Key 和 Value 可以复用。
+
+2. **每步只处理新 token**  
+   第 \(t\) 步只需要计算新 token 的 Query，并与缓存中的历史 Key/Value 做注意力，而不是重新计算整个前缀序列。
+
+3. **降低推理计算量**  
+   不用 cache 时，每步都要对越来越长的前缀重新计算；用 cache 后，计算量主要来自当前 token 与历史 K/V 的注意力，整体推理效率更高。
+
+简单说：  
+**KV cache 通过缓存历史 token 的 Key 和 Value，让自回归解码每步只计算新 token，从而避免大量重复计算，加速生成过程。**  
+代价是会增加显存占用，因为需要保存越来越长的 K/V 缓存。

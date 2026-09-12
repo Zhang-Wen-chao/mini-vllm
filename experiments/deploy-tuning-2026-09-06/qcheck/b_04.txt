@@ -1,0 +1,31 @@
+We need answer in Chinese likely. User asks: 写一个 Python 函数，判断一个字符串是否是回文，忽略大小写和标点。 Need provide function. Need final concise but maybe include explanation and examples. Need ensure ignores punctuation and maybe spaces? "标点" punctuation, likely also non-alphanumeric? We can use str.isalnum to keep letters/digits, lower. Function:
+def is_palindrome(s: str) -> bool:
+    cleaned = [ch.lower() for ch in s if ch.isalnum()]
+    return cleaned == cleaned[::-1]
+Could mention if only letters? If punctuation includes spaces? isalnum ignores spaces and punctuation. If want Unicode letters/digits. Could also use regex. Provide code.
+Need final in Chinese.
+</think>
+
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    判断字符串是否是回文。
+    忽略大小写、标点符号和空格。
+    """
+    cleaned = [ch.lower() for ch in s if ch.isalnum()]
+    return cleaned == cleaned[::-1]
+```
+
+示例：
+
+```python
+print(is_palindrome("A man, a plan, a canal: Panama"))  # True
+print(is_palindrome("race a car"))                      # False
+print(is_palindrome("Was it a car or a cat I saw?"))    # True
+```
+
+说明：
+
+- `ch.isalnum()` 只保留字母和数字，自动忽略标点、空格等。
+- `ch.lower()` 忽略大小写。
+- `cleaned[::-1]` 得到反转后的列表，用于比较是否回文。

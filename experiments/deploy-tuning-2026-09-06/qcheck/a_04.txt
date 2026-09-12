@@ -1,0 +1,26 @@
+用户要求用中文写一个 Python 函数，判断字符串是否是回文，忽略大小写和标点。需要给出代码，可能包含示例。需要确保只保留字母数字？“忽略大小写和标点”通常意味着只考虑字母和数字，忽略空格和标点。可以用 str.isalnum() 过滤，转小写，比较 s == s[::-1]。也可以考虑 Unicode 字母数字。提供简洁函数和测试。
+</think>
+
+```python
+def is_palindrome(s: str) -> bool:
+    """
+    判断字符串是否是回文。
+    忽略大小写、空格和标点，只比较字母和数字。
+    """
+    cleaned = [ch.lower() for ch in s if ch.isalnum()]
+    return cleaned == cleaned[::-1]
+```
+
+示例：
+
+```python
+print(is_palindrome("A man, a plan, a canal: Panama"))  # True
+print(is_palindrome("race a car"))                       # False
+print(is_palindrome("Was it a car or a cat I saw?"))    # True
+```
+
+说明：
+
+- `ch.isalnum()`：只保留字母和数字，忽略空格、标点等。
+- `ch.lower()`：统一转成小写，忽略大小写。
+- `cleaned[::-1]`：反转列表，用于判断是否回文。
