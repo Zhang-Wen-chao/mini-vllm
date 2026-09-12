@@ -1,0 +1,22 @@
+04:48:46 sweep8 start: the k=2 high-concurrency arm | PHASES=Z8 | RPA=2 RPB=3
+04:48:46 Z8 pair = RPA=2 RPB=3 (all Z8 comparisons are same-pair, same-window)
+04:48:46 Z8 R2cZ8 (k=1) booting on 2+3
+04:48:46 GPUS_IDLE 2 — holding 10 polls before boot
+04:48:46 WAIT_GPU 2:idle-holding (poll 1)
+04:53:16 GPUS_FREE 2 after 9 polls (held 10)
+04:53:16 GPUS_IDLE 3 — holding 10 polls before boot
+04:53:16 WAIT_GPU 3:idle-holding (poll 1)
+04:57:46 GPUS_FREE 3 after 9 polls (held 10)
+04:59:26 R2cZ8 pair up (266188/267358)
+05:10:43 R2cZ8 phase done
+05:10:43 Z8 R2c2Z8 (k=2) booting on 2+3
+05:10:43 GPUS_IDLE 2 — holding 10 polls before boot
+05:10:43 WAIT_GPU 2:idle-holding (poll 1)
+05:15:13 GPUS_FREE 2 after 9 polls (held 10)
+05:15:13 GPUS_IDLE 3 — holding 10 polls before boot
+05:15:13 WAIT_GPU 3:idle-holding (poll 1)
+05:19:44 GPUS_FREE 3 after 9 polls (held 10)
+05:21:24 R2c2Z8 pair up (274585/275729)
+05:33:28 R2c2Z8 phase done
+05:33:28 Z8 phase done
+05:33:28 ALL_DONE
