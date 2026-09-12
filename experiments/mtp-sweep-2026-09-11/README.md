@@ -14,11 +14,12 @@ MTP 头权重）做投机解码实测。**与 mini-vllm 仓库的关系**：本�
 | 类别 | 模式 | 替换为 | 首次发现 |
 |---|---|---|---|
 | 路径 | `<nvme-root>/<sweep 目录>` | `<out-dir-N>` | sweep1 |
-| 路径 | `/root/models/...`、`/root/vllm-env` | `<model-dir>` / `<venv>` | sweep1 |
+| 路径 | 模型目录、虚拟环境的绝对路径 | `<model-dir>` / `<venv>` | sweep1 |
+| **账号名** | **测量机的登录账号** | **不出现（描述写「账号名」）** | **2026-09-12 自查补入** |
 | **主机地址** | **`mq_connect_ip=<私网 IP>`** | **`mq_connect_ip=<host-ip>`** | **sweep8 归档时回头扫出（2026-09-12）** |
 
 最后一条是补上一个真实疏漏：sweep7 的 12 个 `server_*.log` 里带着
-vLLM `multiproc_executor.py:150` 打出的 `mq_connect_ip=10.82.0.xx (local)`——
+vLLM `multiproc_executor.py:150` 打出的 `mq_connect_ip=<私网 IP> (local)`——
 **宿主机私网地址**（此处本身也已打码），随 sweep7 一起推上去了。归档流程此前只扫路径，
 **没有扫过地址**，所以它一路过了好几轮扫描。已于 2026-09-12 在**工作区**替换为
 `<host-ip>` 并留证据完整性说明（见下）；**但它仍在已推送的历史提交里**，
@@ -1900,7 +1901,7 @@ R2cZ 重跑**覆盖**了受污染那次的 `server_R2cZ_1.log`（40 行）与全
 以及 170213 在 16:54:34 服务流量的 pid 前缀）。**下次遇到同类污染，先备份再重跑。**
 
 **2026-09-12 追加披露（地址脱敏，事后改的）**：本目录 12 个 `server_*.log` 里的
-`mq_connect_ip=10.82.0.xx (local)` 已替换为 `mq_connect_ip=<host-ip>`。
+`mq_connect_ip=<私网 IP> (local)` 已替换为 `mq_connect_ip=<host-ip>`。
 改的是 vLLM 启动时打印的**宿主私网地址**，与任何实验读数无关，
 被改行的其余内容逐字未动。**这类改动必须披露**：
 它意味着本目录的日志文件**不是原始字节**，凡是引用这些日志的结论
@@ -2311,7 +2312,7 @@ B1c 当年把卡对效应定价 **2.21%**，那是跨窗口间接推的。这一
 
 **证据完整性**：`sweep9/` **94 个文件（1.4 MB）**，脱敏按文首清单逐条过——
 `<out-dir-9>` / `<nvme-root>` / `<model-dir>` 三类替换后复查：
-`zhangwenchao` 残留 **0**、`/root/` 或 `/mnt/` 绝对路径残留 **0**、
+账号名残留 **0**、`/root/` 或 `/mnt/` 绝对路径残留 **0**、
 IPv4 只剩 `127.0.0.1`（2832 处，回环）与 `0.0.0.0`（10 处）。
 **这一轮的原始日志里压根没出现过主机地址**，所以没有需要事后回改的地址
 （对比 sweep7 那次：那 12 份 server log 是被事后 sed 过的，字节已非原始）。
@@ -2439,11 +2440,11 @@ sweep9 的 `EG` 证明了图池是从 KV 预算里扣的（池 93,934 → 105,40
 
 #### 证据与又一次地址脱敏
 
-`sweep10/` **42 个文件 / 504 KB**。脱敏后 `zhangwenchao` 残留 0、`/root` 与 `/mnt`
+`sweep10/` **42 个文件 / 504 KB**。脱敏后账号名残留 0、`/root` 与 `/mnt`
 绝对路径残留 0，IPv4 只剩 `127.0.0.1` 与 `0.0.0.0`。
 
 **这一轮又抓到一次宿主私网地址**：`server_P10tp2b.log` 与 `server_P10tp2f.log`
-里各有一处 `mq_connect_ip=10.82.0.23`（TP2 走 multiproc executor，才会打这行；
+里各有一处 `mq_connect_ip=<私网 IP>`（TP2 走 multiproc executor，才会打这行；
 sweep9 的副本臂是 TP=1，没打）。**已打码为 `<host-ip>`——这两份日志不是原始字节。**
 和 sweep7 那次是同一个来源、同一个修法；区别是这次在**推送之前**就扫出来了
 （扫地址这一步现在是归档流程的固定动作，不再只扫路径）。
@@ -2701,7 +2702,7 @@ sweep10 CGS 675.70；而 sweep9 的 GMU 臂读到 **683.19** —— 与本次 **
 
 #### 证据
 
-`sweep11/` **79 个文件 / 1.2 MB**，脱敏后 `zhangwenchao`、`/root`、`/mnt` 绝对路径残留 0，
+`sweep11/` **79 个文件 / 1.2 MB**，脱敏后账号名、`/root`、`/mnt` 绝对路径残留 0，
 IPv4 只剩 `127.0.0.1` 与 `0.0.0.0`。**这一轮扫描零地址**——
 独立证实了「宿主私网地址是 TP2 走 multiproc executor 才打的、纯副本臂不会打」这个判断
 （sweep9 副本臂 0 处、sweep10 的 TP2 臂 2 处、sweep11 全副本臂 0 处）。
@@ -3076,6 +3077,7 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
 | `sweep4/`（C4 全套：summary/bench×2/engine_stats×2/specmetrics×2/greedy/startup_lines） | **len 4096 阴性对照**：@48 298.21（<340 判据）、Running 仍 16-17、KV 字节同 9.28 GiB、C2 vs C4 贪心 8/8 |
 | `sweep5/` | W4 全套：summary/bench×2/engine_stats×2/specmetrics×2/greedy/startup_lines/**ceval_W4.log**（路径脱敏同上） |
 | `mtp_bench6.sh` | sweep6 编排：TP2 锚点 + R2b/R2c/R2a 副本对四相（docstring 含臂设计与邻座条件） |
+| `mtp_bench7.sh` | sweep7 编排（B0/B1/R2c/R2b/B0p/FV + 夜跑 Z2–Z7 全部相位块）。**2026-09-12 补进清单**——文件一直在库里，只是从没被列进来 |
 | `sweep6/` | 2 卡部署矩阵全套：summary（含 nan bug 现场）/bench×10/engine_stats×4/startup_lines（池打印 129,706 vs 历史 136,533 的邻座足迹证据）/gpu_snapshots×5/specmetrics×2 |
 | `sweep7/` | 本窗证据：B0 `bench_B0_c16/c48.log`（**含客户端 Namespace 口径字段**，坑 17c）/ engine_stats_B0_c{16,48}_s{1,2,3}（7 份，prefix 恒 0.0%）/ server_startup_lines（四项台账闭合）/ gpu_snapshots / run.log / summary.txt |
 | `sweep7/seeds.txt` | **非推断的 tag→seed 表**（24 行，逐条从每个 bench log 自己的 `Namespace(seed=N)` 抽出）。坑 21 的取证与修法依据 |
@@ -3097,6 +3099,28 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
 | `sweep7/bench_R2cZv_{w0,c120t,c126t,c126tr,c132t,c126tb}_p{1,2}.log` 等 15 件 | Z5 的凹口独立复测（单臂 k=1，12 个 bench log + 2 个 server log + 1 个 specmetrics）——**R1–R4 全确认：凹口独立复现，且不是劈叉**；`@126t` 三个读数 654.78/653.52/652.84 极差 0.30%，全部 rung 的 \|p1−p2\| ≤0.69%（2% 阈值零命中） |
 | `sweep7/bench_R2cZ6_{n1..n6}_p{1,2}.log` 等 16 件 | Z6 的位置效应定向复测（单臂 k=1，两形状交错 `48,120,48,120,48,120`，seed 固定 0）——**@48t 首点 653.57 比同形状的 662.59/662.77 低 1.37%**；@120t 点只低 0.09%；同形状重复差 **0.03% / 0.30%**（噪声底比效应小一个量级）。**交错从 @48t 开始 → 形状归属未判**，Z7 反向交错 |
 | `sweep7/bench_R2cZ7_{m1..m6}_p{1,2}.log` 等 16 件 | Z7 的反向交错（单臂 k=1，`120,48,120,48,120,48`，seed 固定 0）——**S1/S2 双双证伪、NEITHER fired**：`m1`（@120t boot 首点）只低 **0.41%**、`m2`（@48t 位置 2）**完全不低（+0.04%）**；同形状非首点在两相之间只差 **0.14% / 0.05%**（@48t 五个 661.03–662.77、@120t 五个 668.66–671.22）→ **`发现 B` 整条作废** |
+| `mtp_bench8.sh` | sweep8 编排（**k=2 高并发臂**：`R2cZ8` vs `R2c2Z8` 两臂同窗口各一次 boot，八格 @24t–@144t）。**2026-09-12 补档**（见下「归档缺口」） |
+| `mtp_bench9.sh` | sweep9 编排（**卡对 PAIR / EG / GMU / MB** 四相）——`build9.sh` 机械生成 |
+| `mtp_bench10.sh` | sweep10 编排（**CGS / TP2F** 两相，含坑 27 的现场）——`build10.sh` 机械生成 |
+| `mtp_bench11.sh` | sweep11 编排（**2×2 同窗四臂** A00/A10/A01/A11，解答「两个容量源能不能叠加」） |
+| `build9.sh` / `build10.sh` | sweep9/sweep10 的**构建配方**：`head -n -2 mtp_bench7.sh` + 3 行 `sed`(OUT/PHASES/banner) + 追加相位块，`bash -n` + `diff` 自证只改了 3 行。**这三行本身就是"相位代码是唯一新内容"的证明** |
+| `sweep8/` | k=2 高并发全套 93 文件 1.6 MB：summary / bench×32（两臂 × 八格 × 两副本）/ engine_stats×48（**k=2 `Running` 六格恒 17、k=1 恒 24** = 墙的签名）/ specmetrics×2 / server×5 / seeds_used / loadavg / gpu_snapshots |
+| `sweep9/` | 四相全套 94 文件 1.4 MB：bench×28 / engine_stats×42 / specmetrics×2 / server×11 / **`cachecfg_*.txt`×5**（EG/GMU/MB/PAIR 各一份）—— PAIR（**卡对效应 +0.10%/+0.33%，池逐字节相同**）/ EG（**池 +12.21%、Running 24→27，代价 −17.68%/−14.52%**）/ GMU（**池 +15.12%、Running→28，@120t +1.57%**）/ MB（**旋钮进得去、效果出不来 → 判死不再排**） |
+| `sweep10/` | 两相全套 42 文件 504 KB：bench×10 / engine_stats×21 / server×5 —— CGS（**图池 0.67→0.24 GiB、池 +9,285 → 修正为 +4,370**，见修正轨迹 14）/ TP2F（**TP2 上量化 +30.05% vs 副本上 +30.10% → 布局无关，0.05pp**） |
+| `sweep11/` | 四臂全套 79 文件 1.2 MB：bench×24 / engine_stats×36 / server×9 / `cachecfg_*.txt`×4 —— **池 93,934 / 98,304 / 110,865 / 112,503；Running 24 / 25 / 28 / 29；@48t 661.59 / 653.08 / 660.71 / 653.75；@120t 667.40 / 671.86 / 683.26 / 680.35**；**交互项 −1 token = 两个容量源是同一本预算上的两笔减法**；上线配置手臂 A01 |
+
+> **归档缺口（2026-09-12 发现并补齐）**：`mtp_bench8.sh`–`mtp_bench11.sh` 与
+> `build9.sh`/`build10.sh` **此前从未归档**——它们只存在于测量机的 `<script-dir>`。
+> 后果：sweep8–11 的**证据文件在库、但产出它们的相位编排不在库**，日志里只有
+> 各臂的 `Namespace(...)` 参数，没有「丢预热点 / 同池对齐 / `wait_gpus` 门 /
+> seed 冻结表 / `port_precheck`」这套编排，**按库无法复跑**。
+> 已按与 `mtp_bench7.sh` 同一套占位符约定（`<nvme-root>` / `<out-dir-N>` /
+> `<venv>` / `<model-dir>`）脱敏入库，账号名、`/mnt/`、`/root/`、
+> 主机名、容器 ID 残留均为 **0**，IPv4 只剩回环。**教训与坑 21/26 同族：
+> 「东西在机器上」不等于「东西在库里」——每轮收尾的归档动作要拿
+> 「库里的脚本清单」对「机器上的脚本清单」，不能只看证据文件齐不齐。**
+> （另注：这些脚本与 `mtp_bench7.sh` 一样**带占位符、不能原样执行**，
+> 它们是协议记录而非可运行产物；复跑需先把占位符换回真路径。）
 
 对照记录：TP2 bf16 基线数字来自部署实验同窗 ABBA（@16 284.9±6.5 / @48 350.2±3.3）。
 **⚠️ 这两行跨窗引用前先读坑 17**：本窗重测为 @16 239.61 / @48 375.09，@16 差
