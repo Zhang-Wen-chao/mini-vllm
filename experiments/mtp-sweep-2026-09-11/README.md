@@ -3065,6 +3065,7 @@ CUDA_VISIBLE_DEVICES=<gpu> HF_HUB_OFFLINE=1 <venv>/vllm serve <model-dir> \
 | `greedy_diff2.py` / `greedy_diff3.py` | 逐 token 对照（含 within-arm 对照优先的设计） |
 | `greedy_diff4.py` | A(sweep1) vs W4 对照（含首翻位置报告） |
 | `greedy_diff_c2c4.py` | C2 vs C4 对照（len 数值中性的证据） |
+| `greedy_diff.py` / `greedy_diff_c4.py` / `greedy_show.py` / `check_mtp.py` / `w4_show.py` | 贪心探针的辅助小工具（首版对照、C4 对照、原始输出查看、MTP 头自检、W4 输出查看）。**2026-09-12 与 `mtp_bench8–11.sh` 一起补档** |
 | `sweep{1,2}/summary.txt` | 各臂各并发档的关键指标汇总 |
 | `sweep{1,2}/run.log` | 臂启动/完成时间线（含锚点） |
 | `sweep{1,2}/bench_*.log` | bench 原始输出 |
