@@ -2092,6 +2092,97 @@ k=2 **70.06%**（108,681/155,130）——k=1 接受率更高**且**吞吐更高�
   （这次是扫了地址的；sweep7 那次没扫，见开头的脱敏清单）。
   每点 3 次引擎态采样齐全，16/16 点无缺。
 
+---
+
+## sweep9 预注册（两个源码口子判死 + 三个扫窗口项 + 一个新旋钮）
+
+> **本节写在跑之前。** 下面「预测」栏是先落字的，跑完只回填不回改。
+> 两个源码口子的判决写在前面，因为它们是**不用 GPU 就做完的实验**。
+
+### 一、口子 1「GDN 状态是 fp32」→ **判死，而且死两次**
+
+这条口子是我自己写在 §2 的，原文是：文档里「占池 58% 的那部分状态**压不动**」
+**从未被验证、是假设**，若 vLLM 以 fp32 存 GDN 状态，压到 bf16 即 **容量 ×1.41**。
+逐行读过源码后：
+
+1. `model_executor/layers/mamba/mamba_utils.py:53` —
+   `linear_attention_state_dtype()` 只做一件事：
+   `state_dtype = get_kv_cache_torch_dtype(mamba_cache_dtype, model_dtype)`。
+2. `config/cache.py:129` — `mamba_cache_dtype: MambaDType = "auto"`，
+   而 `utils/torch_utils.py:409` 的 `"auto"` 分支落到 **`model_dtype`**，
+   本模型是 bf16。**所以 GDN 状态默认就是 bf16，从来不是 fp32**——
+   假设的**前提直接不成立**。
+3. 再往下压一档也没有路：`config/cache.py:38`
+   `MambaDType = Literal["auto", "float32", "float16", "bfloat16"]`——
+   **fp8 不在允许值里**。bf16 ↔ fp16 同字节数，零容量收益。
+
+**判决：容量轴这条假设封死。** 这也**反向加固**了 [§5](#5-容量墙mtp-的边界在显存) 的结论——
+池里那 58% 既降不了（已是 bf16）也压不动（无 fp8），容量只能从**每请求块数**（k）那边要。
+顺带解释了一个老观测：`--kv-cache-dtype fp8` 为什么只 +37.5% 而不是 +100%——
+**它压根不碰 GDN 状态**，两个 dtype 是各自独立的旋钮。
+
+### 二、口子 6「AWQ 也许能绕开 Marlin」→ **判死**
+
+1. `model_executor/layers/quantization/auto_awq.py:309` —
+   `use_marlin = (not VLLM_BATCH_INVARIANT and is_cuda() and check_marlin_supported(quant_type, group_size, zero_point))`
+2. `.../utils/marlin_utils.py:65` — `if device_capability < 75: return []`，
+   L20 是 **SM89 → 89 ≥ 75**；
+3. group_size **128** 在 `MARLIN_SUPPORTED_GROUP_SIZES = [-1, 32, 64, 128]` 里。
+
+三条全中。**判决：AWQ 会被自动升级成 `awq_marlin`，和 GPTQ 走同一族 kernel。**
+
+**这条判死反而让结论更硬**：W4 那个 **+57% 的 TPOT 不是「GPTQ 的问题」，
+是「Marlin 这一族 kernel 在 sm89 低 batch decode 上的 dequant 开销」**。
+AWQ **不需要再排实验**——原判据（TPOT ≤50ms 且 @48 > 420）作废，
+因为它测不出新东西。
+
+### 三、顺带挖出来的一个新旋钮（本相位要探的）
+
+`config/cache.py:125` `mamba_block_size: int | None = None`，
+CLI 入口 `engine/arg_utils.py:1238` `--mamba-block-size`——**我们从来没动过它**。
+它定的是 **mamba page 的 token 粒度**。而 §5.2 说块粒度被 mamba page 抬高、
+§5.3 说每请求的税是**按块**交的，那么**改块粒度就是改「每请求 2 块快照税」的度量单位**。
+
+两条约束都已确认可满足：必须是 8 的倍数（对齐 causal_conv1d），
+且 `config/vllm.py:2551` 要求 prefix caching 打开——**默认就是 True**（`cache.py:96`）。
+
+### 四、相位表
+
+`R2c 终态配置` = 2× 副本、fp8 权重 + fp8 KV + `--max-num-batched-tokens 8192` +
+`num_speculative_tokens=1`；`FORCE_SEED=0` 单池，每臂丢一个预热点。
+
+| 相 | 臂 | 卡对 | 点 | 回答什么 |
+|---|---|---|---|---|
+| `PAIR` | R2c 终态配置 | **(1,2)** 与 **(2,3)** 各一次 | @48t、@120t | **卡对效应值几个百分点** |
+| `EG` | R2c + `--enforce-eager` | (2,3) | @48t、@120t | CUDA graph 池值几路 |
+| `GMU` | R2c + `--gpu-memory-utilization 0.95` | (2,3) | @48t、@120t | 每副本多几路 |
+| `MB` | R2c + `--mamba-block-size 32` | (2,3) | @48t | 块粒度是不是新杠杆 |
+
+### 五、预注册预测（跑之前写死）
+
+1. **`PAIR`：卡对差异 < 1%。**
+   依据：sweep7 Z2 的 k=1 臂在 (1,2) 读 @120t = **669.31**，
+   sweep8 Z8 的**同一配置**在 (2,3) 读 **668.13**——**跨窗口已经只差 0.18%**。
+   **证伪条件：同窗实测 |(1,2) − (2,3)| ≥ 2%**（B1c 的定价）。
+   若触发，[§7](#7-布局为什么两个副本赢过-tp2) 的**布局 +6.57% 要重算**，
+   因为那个因子的一侧跑在 (2,3)、另一侧跑在 (1,2)。
+2. **`EG`：吞吐会降，但 `Running` 会升。**
+   `--enforce-eager` 把 graph 池（0.55–1.13 GiB）还给 KV → 每副本 **+1–3 路**。
+   预测 `Running` 从 **24 升到 25–27**。
+   **证伪条件：`Running` 不动**——那说明 graph 池不是从 KV 池里扣的，这条机制要重写。
+3. **`GMU`：0.95 让 `Running` 从 24 升到 27±2。**
+   依据：+0.03 × 44.52 = **1.34 GiB ≈ 7 块 ≈ +3 路/副本**。
+   **证伪条件：`Running` 不动，或吞吐反降 >1%。**
+4. **`MB`：不设方向预测，这是一次探测。**
+   只问一件事：**它到底改不改 `block_size`**（从启动日志的 `cache_config_info` 读）。
+   **若 `block_size` 不变 → 这个旋钮在本模型上是死的，直接记死，不再排。**
+
+### 六、记录要求
+
+每点 3 次引擎态采样（Running/Waiting/KV%）、启动台账、seed 表、
+`gpu_snap`、loadavg 快照。**`PAIR` 的两臂必须同窗口**——
+这是这一轮里唯一一个"窗口不同就没意义"的相位。
+
 ## 复现
 
 ### sweep7 运行手册（命令、相位、证据落点）
