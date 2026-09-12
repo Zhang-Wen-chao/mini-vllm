@@ -1,0 +1,47 @@
+05:58:26 sweep9 start: card pair / enforce-eager / gmu / mamba block size | PHASES=PAIR EG GMU MB
+05:58:26 PAIR P9pair12 booting on (1,2)
+05:58:26 GPUS_IDLE 1 — holding 10 polls before boot
+05:58:26 WAIT_GPU 1:idle-holding (poll 1)
+06:02:57 GPUS_FREE 1 after 9 polls (held 10)
+06:02:57 GPUS_IDLE 2 — holding 10 polls before boot
+06:02:57 WAIT_GPU 2:idle-holding (poll 1)
+06:07:27 GPUS_FREE 2 after 9 polls (held 10)
+06:09:07 P9pair12 pair up (283539/284687)
+06:13:39 P9pair12 phase done
+06:13:39 PAIR P9pair23 booting on (2,3)
+06:13:39 GPUS_IDLE 2 — holding 10 polls before boot
+06:13:39 WAIT_GPU 2:idle-holding (poll 1)
+06:18:09 GPUS_FREE 2 after 9 polls (held 10)
+06:18:09 GPUS_IDLE 3 — holding 10 polls before boot
+06:18:09 WAIT_GPU 3:idle-holding (poll 1)
+06:22:40 GPUS_FREE 3 after 9 polls (held 10)
+06:24:20 P9pair23 pair up (288128/289300)
+06:28:52 P9pair23 phase done
+06:28:52 EG P9eg booting on (2,3) with --enforce-eager
+06:28:52 GPUS_IDLE 2 — holding 10 polls before boot
+06:28:52 WAIT_GPU 2:idle-holding (poll 1)
+06:33:23 GPUS_FREE 2 after 9 polls (held 10)
+06:33:23 GPUS_IDLE 3 — holding 10 polls before boot
+06:33:23 WAIT_GPU 3:idle-holding (poll 1)
+06:37:53 GPUS_FREE 3 after 9 polls (held 10)
+06:39:23 P9eg pair up (292803/293943)
+06:44:36 P9eg phase done
+06:44:36 GMU P9gmu booting on (2,3) with --gpu-memory-utilization 0.95
+06:44:36 GPUS_IDLE 2 — holding 10 polls before boot
+06:44:36 WAIT_GPU 2:idle-holding (poll 1)
+06:49:07 GPUS_FREE 2 after 9 polls (held 10)
+06:49:07 GPUS_IDLE 3 — holding 10 polls before boot
+06:49:07 WAIT_GPU 3:idle-holding (poll 1)
+06:53:37 GPUS_FREE 3 after 9 polls (held 10)
+06:55:17 P9gmu pair up (297444/298592)
+06:59:46 P9gmu phase done
+06:59:46 MB P9mb booting on (2,3) with --mamba-block-size 32
+06:59:46 GPUS_IDLE 2 — holding 10 polls before boot
+06:59:46 WAIT_GPU 2:idle-holding (poll 1)
+07:04:16 GPUS_FREE 2 after 9 polls (held 10)
+07:04:16 GPUS_IDLE 3 — holding 10 polls before boot
+07:04:16 WAIT_GPU 3:idle-holding (poll 1)
+07:08:46 GPUS_FREE 3 after 9 polls (held 10)
+07:10:26 P9mb pair up (302036/303226)
+07:13:16 P9mb phase done
+07:13:16 ALL_DONE
