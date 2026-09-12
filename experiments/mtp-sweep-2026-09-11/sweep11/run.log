@@ -1,0 +1,38 @@
+08:08:44 sweep11 start: 2x2 capacity additivity | PHASES=A00 A10 A01 A11
+08:08:45 A00 P11a00 R2c baseline on (2,3), same window
+08:08:45 GPUS_IDLE 2 — holding 10 polls before boot
+08:08:45 WAIT_GPU 2:idle-holding (poll 1)
+08:13:15 GPUS_FREE 2 after 9 polls (held 10)
+08:13:15 GPUS_IDLE 3 — holding 10 polls before boot
+08:13:15 WAIT_GPU 3:idle-holding (poll 1)
+08:17:45 GPUS_FREE 3 after 9 polls (held 10)
+08:19:25 P11a00 pair up (317242/318390)
+08:23:58 P11a00 phase done
+08:23:58 A10 P11a10 R2c + CGS on (2,3)
+08:23:58 GPUS_IDLE 2 — holding 10 polls before boot
+08:23:58 WAIT_GPU 2:idle-holding (poll 1)
+08:28:29 GPUS_FREE 2 after 9 polls (held 10)
+08:28:29 GPUS_IDLE 3 — holding 10 polls before boot
+08:28:29 WAIT_GPU 3:idle-holding (poll 1)
+08:32:59 GPUS_FREE 3 after 9 polls (held 10)
+08:34:29 P11a10 pair up (321857/323005)
+08:39:02 P11a10 phase done
+08:39:02 A01 P11a01 R2c + GMU 0.95 on (2,3)
+08:39:02 GPUS_IDLE 2 — holding 10 polls before boot
+08:39:02 WAIT_GPU 2:idle-holding (poll 1)
+08:43:32 GPUS_FREE 2 after 9 polls (held 10)
+08:43:32 GPUS_IDLE 3 — holding 10 polls before boot
+08:43:32 WAIT_GPU 3:idle-holding (poll 1)
+08:48:02 GPUS_FREE 3 after 9 polls (held 10)
+08:49:43 P11a01 pair up (326441/327930)
+08:54:11 P11a01 phase done
+08:54:11 A11 P11a11 R2c + CGS + GMU 0.95 on (2,3) -- the combined arm
+08:54:11 GPUS_IDLE 2 — holding 10 polls before boot
+08:54:11 WAIT_GPU 2:idle-holding (poll 1)
+08:58:42 GPUS_FREE 2 after 9 polls (held 10)
+08:58:42 GPUS_IDLE 3 — holding 10 polls before boot
+08:58:42 WAIT_GPU 3:idle-holding (poll 1)
+09:03:12 GPUS_FREE 3 after 9 polls (held 10)
+09:04:42 P11a11 pair up (331643/332791)
+09:09:11 P11a11 phase done
+09:09:11 ALL_DONE

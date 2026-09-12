@@ -1,0 +1,48 @@
+08:08:45 busy 2:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+08:13:15 FREE 2 waited 270s held 10x30s
+08:13:15 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+08:17:45 FREE 3 waited 270s held 10x30s
+08:23:58 busy 2:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+08:28:29 FREE 2 waited 270s held 10x30s
+08:28:29 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+08:32:59 FREE 3 waited 270s held 10x30s
+08:39:02 busy 2:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+08:43:32 FREE 2 waited 270s held 10x30s
+08:43:32 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+08:48:02 FREE 3 waited 270s held 10x30s
+08:54:11 busy 2:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+08:58:42 FREE 2 waited 270s held 10x30s
+08:58:42 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+09:03:12 FREE 3 waited 270s held 10x30s
