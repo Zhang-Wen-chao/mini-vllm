@@ -1,0 +1,29 @@
+07:22:03 busy <out-dir-10>/server_P10cgs_1.log:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+07:23:35 busy 2:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+07:28:05 FREE 2 waited 270s held 10x30s
+07:28:05 busy 3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+07:32:36 FREE 3 waited 270s held 10x30s
+07:38:38 busy 2,3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+07:43:08 FREE 2,3 waited 270s held 10x30s
+07:47:30 busy 2,3:none held=1
+0, 43808 MiB
+1, 295 MiB
+2, 295 MiB
+3, 295 MiB
+07:52:01 FREE 2,3 waited 270s held 10x30s

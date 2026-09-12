@@ -1,0 +1,26 @@
+07:22:03 sweep10 start: cudagraph capture table + quantization gain on TP2 | PHASES=CGS TP2F
+07:22:03 CGS P10cgs booting on (,) with a pruned --cudagraph-capture-sizes (<=128, 19 buckets)
+07:22:03 GPUS_IDLE <out-dir-10>/server_P10cgs_1.log — holding 10 polls before boot
+07:22:03 WAIT_GPU <out-dir-10>/server_P10cgs_1.log:idle-holding (poll 1)
+07:23:35 sweep10 start: cudagraph capture table + quantization gain on TP2 | PHASES=CGS TP2F
+07:23:35 CGS P10cgs booting on (2,3) with a pruned --cudagraph-capture-sizes (<=128, 19 buckets)
+07:23:35 GPUS_IDLE 2 — holding 10 polls before boot
+07:23:35 WAIT_GPU 2:idle-holding (poll 1)
+07:28:05 GPUS_FREE 2 after 9 polls (held 10)
+07:28:05 GPUS_IDLE 3 — holding 10 polls before boot
+07:28:05 WAIT_GPU 3:idle-holding (poll 1)
+07:32:36 GPUS_FREE 3 after 9 polls (held 10)
+07:34:06 P10cgs pair up (306685/307826)
+07:38:37 P10cgs phase done
+07:38:37 TP2F two arms on 2,3, same window: TP2 bf16, then TP2 fp8
+07:38:38 GPUS_IDLE 2,3 — holding 10 polls before boot
+07:38:38 WAIT_GPU 2,3:idle-holding (poll 1)
+07:43:08 GPUS_FREE 2,3 after 9 polls (held 10)
+07:44:58 P10tp2b up (pid 311334)
+07:47:30 P10tp2b phase done
+07:47:30 GPUS_IDLE 2,3 — holding 10 polls before boot
+07:47:30 WAIT_GPU 2,3:idle-holding (poll 1)
+07:52:01 GPUS_FREE 2,3 after 9 polls (held 10)
+07:53:51 P10tp2f up (pid 314144)
+07:55:57 P10tp2f phase done
+07:55:57 ALL_DONE

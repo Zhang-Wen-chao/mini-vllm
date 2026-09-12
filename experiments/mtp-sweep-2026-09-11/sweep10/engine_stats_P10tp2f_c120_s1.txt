@@ -1,0 +1,7 @@
+--- <out-dir-10>/server_P10tp2f.log
+(APIServer pid=314144) INFO 09-12 07:54:08 [loggers.py:310] Engine 000: Avg prompt throughput: 2690.6 tokens/s, Avg generation throughput: 32.6 tokens/s, Running: 26 reqs, Waiting: 22 reqs, GPU KV cache usage: 10.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=314144) INFO 09-12 07:54:18 [loggers.py:310] Engine 000: Avg prompt throughput: 2475.4 tokens/s, Avg generation throughput: 406.6 tokens/s, Running: 48 reqs, Waiting: 0 reqs, GPU KV cache usage: 19.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=314144) INFO 09-12 07:54:28 [loggers.py:310] Engine 000: Avg prompt throughput: 1184.0 tokens/s, Avg generation throughput: 736.7 tokens/s, Running: 46 reqs, Waiting: 0 reqs, GPU KV cache usage: 18.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=314144) INFO 09-12 07:54:38 [loggers.py:310] Engine 000: Avg prompt throughput: 3336.2 tokens/s, Avg generation throughput: 142.6 tokens/s, Running: 46 reqs, Waiting: 0 reqs, GPU KV cache usage: 18.4%, Prefix cache hit rate: 0.0%
+(APIServer pid=314144) INFO 09-12 07:54:48 [loggers.py:310] Engine 000: Avg prompt throughput: 645.7 tokens/s, Avg generation throughput: 939.7 tokens/s, Running: 48 reqs, Waiting: 0 reqs, GPU KV cache usage: 19.2%, Prefix cache hit rate: 0.0%
+(APIServer pid=314144) INFO 09-12 07:54:58 [loggers.py:310] Engine 000: Avg prompt throughput: 0.0 tokens/s, Avg generation throughput: 199.1 tokens/s, Running: 0 reqs, Waiting: 0 reqs, GPU KV cache usage: 0.0%, Prefix cache hit rate: 0.0%

@@ -1,0 +1,2 @@
+--- <out-dir-10>/server_P10cgs_1.log
+--- <out-dir-10>/server_P10cgs_2.log

@@ -1,0 +1,10 @@
+P10cgs_w0_p1 0 P10cgs_w0
+P10cgs_w0_p2 0 P10cgs_w0
+P10cgs_c48t_p1 0 P10cgs_c48t
+P10cgs_c48t_p2 0 P10cgs_c48t
+P10cgs_c120t_p1 0 P10cgs_c120t
+P10cgs_c120t_p2 0 P10cgs_c120t
+P10tp2b_c48 2198 P10tp2b_c48
+P10tp2b_c120 5535 P10tp2b_c120
+P10tp2f_c48 4470 P10tp2f_c48
+P10tp2f_c120 5164 P10tp2f_c120
